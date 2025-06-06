@@ -18,5 +18,5 @@ function parse_yaml {
 
 eval $(parse_yaml config.yml "CSC_")
 
-tail -f $CSC_pipe | plackup -r -R lib bin/app.psgi 2>&1
+plackup -r -R lib bin/app.psgi 2>&1
 
