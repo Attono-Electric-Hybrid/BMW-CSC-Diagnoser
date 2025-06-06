@@ -1,8 +1,5 @@
 package BMW::CSC::Diagnoser;
 use Dancer2;
-use Log::Log4perl qw(:easy);
-use AnyEvent;
-use AnyEvent::Handle;
 
 Log::Log4perl->easy_init($TRACE);
 
