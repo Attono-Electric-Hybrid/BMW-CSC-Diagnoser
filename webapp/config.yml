@@ -59,83 +59,155 @@ engines:
 #      is_secure: 1
 #      is_http_only: 1
 
-device: "/dev//ttyUSB0"
+device: "/dev/ttyUSB0"
 csc_ids:
   1:
-    - '0100'
-    - '0120'
-    - '0130'
-    - '0140'
-    - '0150'
-    - '0160'
-    - '0170'
-    - '0180'
-    - '01C0'
-    - '01D0'
-    - '01E0'
-    - '0200'
+    '0100':
+      type: unknown
+    '0120':
+      type: voltage
+    '0130':
+      type: voltage
+    '0140':
+      type: voltage
+    '0150':
+      type: voltage
+    '0160':
+      type: voltage
+    '0170':
+      type: voltage
+    '0180':
+      type: unknown
+    '01C0':
+      type: unknown
+    '01D0':
+      type: unknown
+    '01E0':
+      type: unknown
+    '0200':
+      type: unknown
   2:
-    - '0101'
-    - '0121'
-    - '0131'
-    - '0141'
-    - '0151'
-    - '0161'
-    - '0171'
-    - '0181'
-    - '01C1'
-    - '01D1'
-    - '01E1'
-    - '0201'
+    '0101':
+      type: unknown
+    '0121':
+      type: voltage
+    '0131':
+      type: voltage
+    '0141':
+      type: voltage
+    '0151':
+      type: voltage
+    '0161':
+      type: voltage
+    '0171':
+      type: voltage
+    '0181':
+      type: unknown
+    '01C1':
+      type: unknown
+    '01D1':
+      type: unknown
+    '01E1':
+      type: unknown
+    '0201':
+      type: unknown
   3:
-    - '0102'
-    - '0122'
-    - '0132'
-    - '0142'
-    - '0152'
-    - '0162'
-    - '0172'
-    - '0182'
-    - '01C2'
-    - '01D2'
-    - '01E2'
-    - '0202'
+    '0102':
+      type: unknown
+    '0122':
+      type: voltage
+    '0132':
+      type: voltage
+    '0142':
+      type: voltage
+    '0152':
+      type: voltage
+    '0162':
+      type: voltage
+    '0172':
+      type: voltage
+    '0182':
+      type: unknown
+    '01C2':
+      type: unknown
+    '01D2':
+      type: unknown
+    '01E2':
+      type: unknown
+    '0202':
+      type: unknown
   4:
-    - '0103'
-    - '0123'
-    - '0133'
-    - '0143'
-    - '0153'
-    - '0163'
-    - '0173'
-    - '0183'
-    - '01C3'
-    - '01D3'
-    - '01E3'
-    - '0203'
+    '0103':
+      type: unknown
+    '0123':
+      type: voltage
+    '0133':
+      type: voltage
+    '0143':
+      type: voltage
+    '0153':
+      type: voltage
+    '0163':
+      type: voltage
+    '0173':
+      type: voltage
+    '0183':
+      type: unknown
+    '01C3':
+      type: unknown
+    '01D3':
+      type: unknown
+    '01E3':
+      type: unknown
+    '0203':
+      type: unknown
   5:
-    - '0104'
-    - '0124'
-    - '0134'
-    - '0144'
-    - '0154'
-    - '0164'
-    - '0174'
-    - '0184'
-    - '01C4'
-    - '01D4'
-    - '01E4'
-    - '0204'
+    '0104':
+      type: unknown
+    '0124':
+      type: voltage
+    '0134':
+      type: voltage
+    '0144':
+      type: voltage
+    '0154':
+      type: voltage
+    '0164':
+      type: voltage
+    '0174':
+      type: voltage
+    '0184':
+      type: unknown
+    '01C4':
+      type: unknown
+    '01D4':
+      type: unknown
+    '01E4':
+      type: unknown
+    '0204':
+      type: unknown
   6:
-    - '0105'
-    - '0125'
-    - '0135'
-    - '0145'
-    - '0155'
-    - '0165'
-    - '0175'
-    - '0185'
-    - '01C5'
-    - '01D5'
-    - '01E5'
-    - '0205'
+    '0105':
+      type: unknown
+    '0125':
+      type: voltage
+    '0135':
+      type: voltage
+    '0145':
+      type: voltage
+    '0155':
+      type: voltage
+    '0165':
+      type: voltage
+    '0175':
+      type: voltage
+    '0185':
+      type: unknown
+    '01C5':
+      type: unknown
+    '01D5':
+      type: unknown
+    '01E5':
+      type: unknown
+    '0205':
+      type: unknown

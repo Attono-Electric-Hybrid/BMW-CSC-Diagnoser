@@ -24,14 +24,20 @@ if ($@ || !defined($config)) {
 
 $log->info("Successfully loaded CSC ID configuration from $config_file");
 
-# --- In-memory ID-to-CSC mapping for fast lookups ---
-my %id_to_csc;
+# --- In-memory ID info map for fast lookups ---
+my %id_info;
+# Iterate through each CSC in the config.
 foreach my $csc (keys %{ $config->{csc_ids} }) {
-    for my $id (@{ $config->{csc_ids}->{$csc} }) {
-        $id_to_csc{$id} = $csc;
+    # Iterate through each ID within that CSC.
+    foreach my $id (keys %{ $config->{csc_ids}->{$csc} }) {
+        # Store the CSC and type for this ID.
+        $id_info{$id} = {
+            csc  => $csc,
+            type => $config->{csc_ids}->{$csc}->{$id}->{type},
+        };
     }
 }
-$log->info("Created reverse lookup map for " . scalar(keys %id_to_csc) . " CAN IDs.");
+$log->info("Created reverse lookup map for " . scalar(keys %id_info) . " CAN IDs.");
 
 # --- Shared Memory Setup ---
 my %can_data_structure;
@@ -43,43 +49,46 @@ my $shareable_handle = tie %can_data_structure, 'IPC::Shareable', $glue, {
 $log->info("Tied shared memory segment '$glue' to data structure.");
 
 open(my $child_handle, "-|", "$Bin/spew_test_data.pl") || $log->logdie("$0: can't open data source for reading: $!");
+
 # --- Main Processing Loop ---
 # Reads and processes CAN data from the child process stream.
 while (my $line = <$child_handle>) {
     # Attempt to parse the CAN message line using a regular expression.
-    # It captures the ID (e.g., '0204') and the data string.
     if ($line =~ /Frame ID: (\S+),\s+Data:\s+(.*)/) {
         my $id   = uc($1); # Normalize ID to uppercase
         my $data = $2;
-        chomp $data; # Remove any trailing whitespace/newline from data
+        chomp $data;
 
-        # Look up the CSC number using the pre-built map.
-        if (exists $id_to_csc{$id}) {
-            my $csc = $id_to_csc{$id};
+        # Look up ID info (CSC and type) using the pre-built map.
+        if (my $info = $id_info{$id}) {
+            my $csc  = $info->{csc};
+            my $type = $info->{type};
 
             # Lock the shared memory segment for a write operation.
             $shareable_handle->shlock();
 
-            # Update the data structure. New data for this ID overwrites old data.
+            # Update the data structure, now including the 'type'.
             $can_data_structure{$csc}{$id} = {
                 data      => $data,
-                timestamp => time(), # Add a timestamp for the update.
+                type      => $type,
+                timestamp => time(),
             };
 
             # Unlock the memory.
             $shareable_handle->shunlock();
 
-            $log->trace("Updated CSC $csc, ID $id");
+            $log->trace("Updated CSC $csc, ID $id, Type $type");
 
         } else {
             # Log if the ID is not in our configuration file.
-            $log->trace("Ignored unknown CAN ID: $id");
+            $log->debug("Ignored unknown CAN ID: $id");
         }
     } else {
         chomp $line;
         $log->warn("Could not parse line from child: '$line'");
     }
 }
+
 # --- Child Exit Handling ---
 # The code reaches here only after the while loop exits, which happens
 # when the child process terminates and the pipe is closed.
