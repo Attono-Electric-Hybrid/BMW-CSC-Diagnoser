@@ -21,6 +21,6 @@ while (1) {
     for my $line (@lines) {
         print $line;
         STDOUT->flush();
-        sleep(0.2);
+        sleep(0.01);
     }
 }

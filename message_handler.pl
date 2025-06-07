@@ -1,12 +1,13 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use IPC::Shareable;
+use Redis;
 use Log::Log4perl qw(:easy);
 use FindBin qw($Bin);
 use YAML::Tiny;
+use JSON::MaybeXS;
 
-Log::Log4perl->easy_init($TRACE);
+Log::Log4perl->easy_init($INFO);
 my $log = Log::Log4perl->get_logger('BMW::CSC::MessageHandler');
 
 # --- Load CSC ID Configuration from YAML ---
@@ -39,83 +40,57 @@ foreach my $csc (keys %{ $config->{csc_ids} }) {
 }
 $log->info("Created reverse lookup map for " . scalar(keys %id_info) . " CAN IDs.");
 
-# --- Shared Memory Setup ---
-my %can_data_structure;
-my $glue = 'bmwcsc';
-my $shareable_handle = tie %can_data_structure, 'IPC::Shareable', $glue, {
-    create  => 1,
-    destroy => 1,
-} or $log->logdie("FATAL: Could not create shared memory segment '$glue': $!");
-$log->info("Tied shared memory segment '$glue' to data structure.");
+# Connect to the Redis server (assumes default localhost:6379)
+my $redis = Redis->new or $log->logdie("Cannot connect to Redis server");
+$log->info("Connected to Redis.");
 
-open(my $child_handle, "-|", "$Bin/spew_test_data.pl") || $log->logdie("$0: can't open data source for reading: $!");
+my $json_coder = JSON::MaybeXS->new(utf8 => 1);
+my $message_count = 0;
+my $child_script_cmd = "perl $FindBin::Bin/data_streamer.pl";
+open my $child_handle, '-|', $child_script_cmd or die "Can't run child script: $!";
 
-# --- Main Processing Loop ---
-# Reads and processes CAN data from the child process stream.
+# --- Main Loop ---
 while (my $line = <$child_handle>) {
-    # Attempt to parse the CAN message line using a regular expression.
+    $message_count++;
     if ($line =~ /Frame ID: (\S+),\s+Data:\s+(.*)/) {
-        my $id   = uc($1);
+        my $id = uc($1);
         my $data = $2;
         chomp $data;
 
-        # Look up ID info (CSC, type, etc.) using the pre-built map.
         if (my $info = $id_info{$id}) {
-            my $csc  = $info->{csc};
-            my $type = $info->{type};
-
-            # Lock the shared memory segment for a write operation.
-            $shareable_handle->shlock();
+            my ($csc, $type) = ($info->{csc}, $info->{type});
+            my $update_payload;
 
             if ($type eq 'voltage' && $info->{cell_map}) {
-                # --- Voltage Message Processing ---
                 my @bytes = split /\s+/, $data;
-                my %cell_voltages;
-
-                # Iterate through the cell map for this ID from our config.
-                foreach my $start_byte (keys %{ $info->{cell_map} }) {
+                my %voltages;
+                foreach my $start_byte (keys %{$info->{cell_map}}) {
                     my $cell_num = $info->{cell_map}->{$start_byte};
-                    my $byte1 = $bytes[$start_byte];
-                    my $byte2 = $bytes[$start_byte + 1];
-
-                    # Ensure both bytes exist before processing.
-                    if (defined $byte1 && defined $byte2) {
-                        my $voltage = convert_bytes_to_voltage($byte1, $byte2);
-                        # Store voltage with two decimal places.
-                        $cell_voltages{$cell_num} = sprintf("%.2f", $voltage);
+                    if (defined $bytes[$start_byte] && defined $bytes[$start_byte + 1]) {
+                        my $voltage = sprintf("%.2f", convert_bytes_to_voltage($bytes[$start_byte], $bytes[$start_byte + 1]));
+                        $voltages{$cell_num} = $voltage;
+                        # Set the voltage for the specific cell in the CSC's hash
+                        $redis->hset("bms:csc:$csc", $cell_num, $voltage);
                     }
                 }
-
-                # Update shared memory with the processed voltage map.
-                $can_data_structure{$csc}{$id} = {
-                    voltages  => \%cell_voltages,
-                    type      => $type,
-                    timestamp => time(),
-                };
-                $log->trace("Processed voltages for CSC $csc, ID $id");
-
+                $update_payload = { csc => $csc, id => $id, type => 'voltage', voltages => \%voltages };
             } else {
-                # --- Non-Voltage Message Processing ---
-                # For "unknown" types, store the raw data string as before.
-                $can_data_structure{$csc}{$id} = {
-                    data      => $data,
-                    type      => $type,
-                    timestamp => time(),
-                };
-                $log->trace("Stored raw data for CSC $csc, ID $id, Type $type");
+                # For unknown types, just store the raw data
+                $redis->hset("bms:csc_raw:$csc", $id, $data);
+                $update_payload = { csc => $csc, id => $id, type => 'unknown', data => $data };
             }
-
-            # Unlock the memory.
-            $shareable_handle->shunlock();
-
-        } else {
-            $log->debug("Ignored unknown CAN ID: $id");
+            
+            # Publish a notification of the update for the logger
+            $redis->publish('bms:updates', $json_coder->encode($update_payload));
+            
+            # Update the global heartbeat
+            $redis->set('bms:heartbeat', time());
+            
+            $log->trace("[Msg $message_count] Wrote ID $id to Redis.");
         }
-    } else {
-        chomp $line;
-        $log->warn("Could not parse line from child: '$line'");
     }
 }
+
 # --- Child Exit Handling ---
 # The code reaches here only after the while loop exits, which happens
 # when the child process terminates and the pipe is closed.
