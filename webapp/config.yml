@@ -1,65 +1,14 @@
-# This is the main configuration file of your Dancer2 app
-# env-related settings should go to environments/$env.yml
-# all the settings in this file will be loaded at Dancer's startup.
-
-# === Basic configuration ===
-
-# Your application's name
-appname: "BMW::CSC::Diagnoser"
-
-# The default layout to use for your application (located in
-# views/layouts/main.tt)
-layout: "main"
-
-# when the charset is set to UTF-8 Dancer2 will handle for you
-# all the magic of encoding and decoding. You should not care
-# about unicode within your app when this setting is set (recommended).
-charset: "UTF-8"
-
-# === Engines ===
+# Configuration for BMW CAN bus message interpretation.
+# Each CSC contains a map of its known CAN IDs.
 #
-# NOTE: All the engine configurations need to be under a single "engines:"
-# key.  If you uncomment engine configurations below, make sure to delete
-# all "engines:" lines except the first.  Otherwise, only the last
-# "engines:" block will take effect.
+# Types can be 'voltage', 'temperature', or 'unknown'.
+#
+# For 'voltage' types, 'cell_map' maps the zero-based start
+# byte (2, 4, 6) to the one-based cell number.
+#
+# For 'temperature' types, 'sensor_map' maps the zero-based
+# start byte (5, 6, 7) to the one-based sensor number.
 
-# template engine
-# simple: default and very basic template engine
-# template_toolkit: TT
-
-template: "template_toolkit"
-engines:
-  template:
-    template_toolkit:
-      # Note: start_tag and end_tag are regexes
-      start_tag: '[%'
-      end_tag:   '%]'
-
-# session engine
-#
-# Simple: in-memory session store - Dancer2::Session::Simple
-# YAML: session stored in YAML files - Dancer2::Session::YAML
-#
-# Check out metacpan for other session storage options:
-# https://metacpan.org/search?q=Dancer2%3A%3ASession&search_type=modules
-#
-# Default value for 'cookie_name' is 'dancer.session'. If you run multiple
-# Dancer apps on the same host then you will need to make sure 'cookie_name'
-# is different for each app.
-#
-#engines:
-#  session:
-#    Simple:
-#      cookie_name: testapp.session
-#
-#engines:
-#  session:
-#    YAML:
-#      cookie_name: eshop.session
-#      is_secure: 1
-#      is_http_only: 1
-
-device: "/dev/ttyUSB0"
 csc_ids:
   1:
     '0100':
@@ -67,39 +16,43 @@ csc_ids:
     '0120':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0130':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0140':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0150':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0160':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0170':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0180':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C0':
       type: unknown
     '01D0':
@@ -114,39 +67,43 @@ csc_ids:
     '0121':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0131':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0141':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0151':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0161':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0171':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0181':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C1':
       type: unknown
     '01D1':
@@ -161,39 +118,43 @@ csc_ids:
     '0122':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0132':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0142':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0152':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0162':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0172':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0182':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C2':
       type: unknown
     '01D2':
@@ -208,39 +169,43 @@ csc_ids:
     '0123':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0133':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0143':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0153':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0163':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0173':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0183':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C3':
       type: unknown
     '01D3':
@@ -255,39 +220,43 @@ csc_ids:
     '0124':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0134':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0144':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0154':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0164':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0174':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0184':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C4':
       type: unknown
     '01D4':
@@ -302,39 +271,43 @@ csc_ids:
     '0125':
       type: voltage
       cell_map:
-        0: 1
-        2: 2
-        4: 3
+        2: 1
+        4: 2
+        6: 3
     '0135':
       type: voltage
       cell_map:
-        0: 4
-        2: 5
-        4: 6
+        2: 4
+        4: 5
+        6: 6
     '0145':
       type: voltage
       cell_map:
-        0: 7
-        2: 8
-        4: 9
+        2: 7
+        4: 8
+        6: 9
     '0155':
       type: voltage
       cell_map:
-        0: 10
-        2: 11
-        4: 12
+        2: 10
+        4: 11
+        6: 12
     '0165':
       type: voltage
       cell_map:
-        0: 13
-        2: 14
-        4: 15
+        2: 13
+        4: 14
+        6: 15
     '0175':
       type: voltage
       cell_map:
-        0: 16
+        6: 16
     '0185':
-      type: unknown
+      type: temperature
+      sensor_map:
+        5: 1
+        6: 2
+        7: 3
     '01C5':
       type: unknown
     '01D5':
