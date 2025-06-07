@@ -66,16 +66,38 @@ csc_ids:
       type: unknown
     '0120':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0130':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0140':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0150':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0160':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0170':
       type: voltage
+      cell_map:
+        0: 16
     '0180':
       type: unknown
     '01C0':
@@ -91,16 +113,38 @@ csc_ids:
       type: unknown
     '0121':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0131':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0141':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0151':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0161':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0171':
       type: voltage
+      cell_map:
+        0: 16
     '0181':
       type: unknown
     '01C1':
@@ -116,16 +160,38 @@ csc_ids:
       type: unknown
     '0122':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0132':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0142':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0152':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0162':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0172':
       type: voltage
+      cell_map:
+        0: 16
     '0182':
       type: unknown
     '01C2':
@@ -141,16 +207,38 @@ csc_ids:
       type: unknown
     '0123':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0133':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0143':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0153':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0163':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0173':
       type: voltage
+      cell_map:
+        0: 16
     '0183':
       type: unknown
     '01C3':
@@ -166,16 +254,38 @@ csc_ids:
       type: unknown
     '0124':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0134':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0144':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0154':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0164':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0174':
       type: voltage
+      cell_map:
+        0: 16
     '0184':
       type: unknown
     '01C4':
@@ -191,16 +301,38 @@ csc_ids:
       type: unknown
     '0125':
       type: voltage
+      cell_map:
+        0: 1
+        2: 2
+        4: 3
     '0135':
       type: voltage
+      cell_map:
+        0: 4
+        2: 5
+        4: 6
     '0145':
       type: voltage
+      cell_map:
+        0: 7
+        2: 8
+        4: 9
     '0155':
       type: voltage
+      cell_map:
+        0: 10
+        2: 11
+        4: 12
     '0165':
       type: voltage
+      cell_map:
+        0: 13
+        2: 14
+        4: 15
     '0175':
       type: voltage
+      cell_map:
+        0: 16
     '0185':
       type: unknown
     '01C5':
