@@ -37,7 +37,8 @@ $log->info("Connected to Redis.");
 
 my $json_coder = JSON::MaybeXS->new(utf8 => 1);
 my $message_count = 0;
-my $child_script_cmd = "perl ./data_streamer.pl"; # Assumes data_streamer is in the same directory
+#my $child_script_cmd = "perl ./data_streamer.pl"; # Test data
+my $child_script_cmd = "./canusb -s 500000 -d /dev/ttyUSB0"; # Live data
 open my $child_handle, '-|', $child_script_cmd 
     or die "Can't run child script '$child_script_cmd': $!";
 
