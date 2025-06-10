@@ -12,6 +12,15 @@
 # For 'total_voltage' types, the last two bytes of the data payload
 # are used.
 
+# Configuration for BMW CAN bus message interpretation.
+# Each CSC contains a map of its known CAN IDs.
+#
+# 'cell_map' maps the zero-based start byte to the one-based cell number.
+# For all voltage messages, the format is now:
+#   Bytes 7-8 (index 6): First cell in message
+#   Bytes 5-6 (index 4): Second cell in message
+#   Bytes 3-4 (index 2): Third cell in message
+
 csc_ids:
   1:
     '0100':
@@ -19,33 +28,33 @@ csc_ids:
     '0120':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0130':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0140':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0150':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0160':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0170':
       type: voltage
       cell_map:
@@ -70,33 +79,33 @@ csc_ids:
     '0121':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0131':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0141':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0151':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0161':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0171':
       type: voltage
       cell_map:
@@ -121,33 +130,33 @@ csc_ids:
     '0122':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0132':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0142':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0152':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0162':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0172':
       type: voltage
       cell_map:
@@ -172,33 +181,33 @@ csc_ids:
     '0123':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0133':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0143':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0153':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0163':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0173':
       type: voltage
       cell_map:
@@ -223,33 +232,33 @@ csc_ids:
     '0124':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0134':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0144':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0154':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0164':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0174':
       type: voltage
       cell_map:
@@ -274,33 +283,33 @@ csc_ids:
     '0125':
       type: voltage
       cell_map:
-        2: 1
+        6: 1
         4: 2
-        6: 3
+        2: 3
     '0135':
       type: voltage
       cell_map:
-        2: 4
+        6: 4
         4: 5
-        6: 6
+        2: 6
     '0145':
       type: voltage
       cell_map:
-        2: 7
+        6: 7
         4: 8
-        6: 9
+        2: 9
     '0155':
       type: voltage
       cell_map:
-        2: 10
+        6: 10
         4: 11
-        6: 12
+        2: 12
     '0165':
       type: voltage
       cell_map:
-        2: 13
+        6: 13
         4: 14
-        6: 15
+        2: 15
     '0175':
       type: voltage
       cell_map:
