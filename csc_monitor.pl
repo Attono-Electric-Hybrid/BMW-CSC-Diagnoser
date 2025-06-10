@@ -135,7 +135,7 @@ sub draw_screen {
     
     # --- Table Headers ---
     addstr(2, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Total V | Near   Mid    Far");
-    addstr(3, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----  | ------- | ----   ----   ----");
+    addstr(3, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- | ------- | ----   ----   ----");
 
     # --- Table Body ---
     for my $csc_num (1..6) {
@@ -161,12 +161,12 @@ sub draw_screen {
             attroff(COLOR_PAIR(PAIR_ALERT_CRITICAL));
         }
 
-        addstr($y_pos, 107 + $left_margin, "|");
+        addstr($y_pos, 106 + $left_margin, "|");
         my $total_v_str = ($is_held || $is_stale || !defined($total_v)) ? "..." : sprintf("%7.3f", $total_v / 1000);
-        addstr($y_pos, 110 + $left_margin, $total_v_str);
+        addstr($y_pos, 107 + $left_margin, $total_v_str);
         
-        addstr($y_pos, 118 + $left_margin, "|");
-        my @sensors = ({ num => 1, x => 120 }, { num => 3, x => 127 }, { num => 2, x => 134 });
+        addstr($y_pos, 116 + $left_margin, "|");
+        my @sensors = ({ num => 1, x => 118 }, { num => 3, x => 125 }, { num => 2, x => 132 });
 
         foreach my $sensor (@sensors) {
             my $t_val = ($is_held || $is_stale) ? undef : $temps_ref->{$sensor->{num}};
@@ -199,7 +199,7 @@ sub draw_screen {
     addstr($stats_y_pos + 3, $left_margin, "Corruption Rate:     " . sprintf("%.2f%%", $corruption_rate));
     addstr($stats_y_pos + 4, $left_margin, sprintf("Global Temp Median: %.2fC", $median_temp));
 
-    my $status_x_pos = 60; # Moved to below statistics
+    my $status_x_pos = 119; # Moved to below statistics
     addstr($stats_y_pos, $status_x_pos, "--- CSC Status ---");
     
     for my $csc_num (1..6) {
