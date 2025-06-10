@@ -56,11 +56,13 @@ while (1) {
     $log->info("Device '$device_file' detected. Starting CAN process.");
 
     # 2. Message Processing Phase
-    my $child_process_cmd = "./canusb -d $device_file -s 500000";
+    # UPDATED: Added '2>&1' to redirect STDERR to STDOUT for capture.
+    my $child_process_cmd = "./canusb -d $device_file -s 500000 2>&1";
+    
     open my $child_handle, '-|', $child_process_cmd
         or $log->logdie("Failed to start child process '$child_process_cmd': $!");
     
-    $log->info("Reading from child process...");
+    $log->info("Reading from child process: $child_process_cmd");
     while (my $line = <$child_handle>) {
         $message_count++;
         $redis->incr('bms:stats:total_messages');
@@ -115,11 +117,10 @@ while (1) {
                     $update_payload = { csc => $csc, id => $id, type => 'temperature', temps => \%sensor_temps };
                     $redis->publish('bms:updates', $json_coder->encode($update_payload));
                     $log->trace("[Msg $message_count] Processed temperatures for CSC $csc, ID $id");
-
+                
                 } elsif ($type eq 'total_voltage') {
                     my @bytes = split /\s+/, $data;
                     if (defined $bytes[6] && defined $bytes[7]) {
-                        # CORRECTED: Re-introduced the 2x scaling factor
                         my $val = (hex($bytes[6] . $bytes[7])) * 2;
                         $redis->set("bms:csc_total_v:$csc", $val);
                         $update_payload = { csc => $csc, id => $id, type => 'total_voltage', value => $val };
