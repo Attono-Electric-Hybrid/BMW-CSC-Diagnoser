@@ -11,17 +11,12 @@ use JSON::MaybeXS;
 Log::Log4perl->easy_init($INFO);
 my $log = get_logger();
 
-# --- Pre-flight Device Checks ---
 my $device_file = '/dev/ttyUSB0';
-unless (-e $device_file) {
-    $log->logdie("Device '$device_file' not found. Is CAN adapter connected?");
-}
-unless (-r $device_file) {
-    $log->logdie("Device '$device_file' is not readable. Check file permissions.");
+unless (-e $device_file && -r $device_file) {
+    $log->logdie("Device '$device_file' not found or not readable.");
 }
 $log->info("Device '$device_file' found and is readable.");
 
-# --- Config and Map Creation ---
 my $config_file = './webapp/config.yml';
 my $config = LoadFile($config_file)
     or $log->logdie("Could not load YAML from '$config_file'");
@@ -40,16 +35,13 @@ foreach my $csc (keys %{ $config->{csc_ids} }) {
 }
 $log->info("Created reverse lookup map for " . scalar(keys %id_info) . " CAN IDs.");
 
-# --- Redis Connection ---
 my $redis = Redis->new or $log->logdie("Cannot connect to Redis server");
 $log->info("Connected to Redis.");
 
-# --- Reset Statistics Counters ---
 $redis->set('bms:stats:total_messages', 0);
 $redis->set('bms:stats:corrupted_frames', 0);
-$log->info("Redis statistics counters have been reset to zero.");
+$log->info("Redis statistics counters reset.");
 
-# --- Child Process Command ---
 my $json_coder = JSON::MaybeXS->new(utf8 => 1);
 my $message_count = 0;
 my $child_process_cmd = "./canusb -d $device_file -s 500000";
@@ -74,10 +66,21 @@ while (my $line = <$child_handle>) {
 
         if (my $info = $id_info{$id}) {
             my ($csc, $type) = ($info->{csc}, $info->{type});
-            my $update_payload;
             
-            $redis->set("bms:heartbeat:$csc", time());
+            # --- Per-CSC Heartbeat and Frequency Tracking ---
+            my $now = time();
+            my $csc_freq_key = "bms:msg_times:$csc";
+            
+            # CORRECTED: Use a MULTI/EXEC transaction block for atomic operations.
+            $redis->multi();
+            $redis->zremrangebyscore($csc_freq_key, '-inf', $now - 3);
+            $redis->zadd($csc_freq_key, $now, "$now:$message_count");
+            $redis->expire($csc_freq_key, 10);
+            $redis->exec();
+            
+            $redis->set("bms:heartbeat:$csc", $now);
 
+            my $update_payload;
             if ($type eq 'voltage' && $info->{cell_map}) {
                 my @bytes = split /\s+/, $data;
                 my %voltages;
