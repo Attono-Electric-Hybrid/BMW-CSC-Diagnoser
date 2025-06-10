@@ -30,9 +30,9 @@ if (has_colors()) {
 }
 
 my ($max_y, $max_x) = (LINES, COLS);
-if ($max_y < 18 || $max_x < 150) {
+if ($max_y < 18 || $max_x < 140) {
     endwin();
-    die "Terminal is too small. Minimum size is 150x18.\n";
+    die "Terminal is too small. Minimum size is 140x18.\n";
 }
 
 # --- Redis Connection ---
@@ -78,9 +78,9 @@ while (1) {
                 $csc_status{$csc_num} = 'Seen';
             }
 
-            # Only fetch data for CSCs that are 'Seen'
             if ($csc_status{$csc_num} eq 'Seen') {
                 $display_data{$csc_num}{voltages} = { $redis->hgetall("bms:csc:$csc_num") };
+                $display_data{$csc_num}{total_v}  = $redis->get("bms:csc_total_v:$csc_num");
                 my $temps = { $redis->hgetall("bms:csc_temps:$csc_num") };
                 $display_data{$csc_num}{temps} = $temps;
                 push @all_temps, values %{$temps};
@@ -134,8 +134,8 @@ sub draw_screen {
     }
     
     # --- Table Headers ---
-    addstr(2, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Near   Mid    Far ");
-    addstr(3, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----  | ----   ----   ----");
+    addstr(2, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Total V | Near   Mid    Far");
+    addstr(3, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----  | ------- | ----   ----   ----");
 
     # --- Table Body ---
     for my $csc_num (1..6) {
@@ -144,6 +144,7 @@ sub draw_screen {
 
         my $voltages_ref = $data_ref->{$csc_num}{voltages} || {};
         my $temps_ref    = $data_ref->{$csc_num}{temps}    || {};
+        my $total_v      = $data_ref->{$csc_num}{total_v};
         
         my $status = $csc_status_ref->{$csc_num} || 'Absent';
         my $is_stale = ($status ne 'Seen');
@@ -161,7 +162,11 @@ sub draw_screen {
         }
 
         addstr($y_pos, 107 + $left_margin, "|");
-        my @sensors = ({ num => 1, x => 109 }, { num => 3, x => 116 }, { num => 2, x => 122 });
+        my $total_v_str = ($is_held || $is_stale || !defined($total_v)) ? "..." : sprintf("%7.3f", $total_v / 1000);
+        addstr($y_pos, 110 + $left_margin, $total_v_str);
+        
+        addstr($y_pos, 118 + $left_margin, "|");
+        my @sensors = ({ num => 1, x => 120 }, { num => 3, x => 127 }, { num => 2, x => 134 });
 
         foreach my $sensor (@sensors) {
             my $t_val = ($is_held || $is_stale) ? undef : $temps_ref->{$sensor->{num}};
@@ -184,7 +189,7 @@ sub draw_screen {
         }
     }
     
-    # --- Statistics Display ---
+    # --- Statistics & Status Panel ---
     my $corruption_rate = ($msg_stats->{total} > 0) ? ($msg_stats->{corrupt} / $msg_stats->{total}) * 100 : 0;
     my $stats_y_pos = 11;
 
@@ -194,8 +199,7 @@ sub draw_screen {
     addstr($stats_y_pos + 3, $left_margin, "Corruption Rate:     " . sprintf("%.2f%%", $corruption_rate));
     addstr($stats_y_pos + 4, $left_margin, sprintf("Global Temp Median: %.2fC", $median_temp));
 
-    # --- CSC Status Panel ---
-    my $status_x_pos = 110;
+    my $status_x_pos = 60; # Moved to below statistics
     addstr($stats_y_pos, $status_x_pos, "--- CSC Status ---");
     
     for my $csc_num (1..6) {

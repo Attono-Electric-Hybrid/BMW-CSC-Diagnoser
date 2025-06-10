@@ -1,13 +1,16 @@
 # Configuration for BMW CAN bus message interpretation.
 # Each CSC contains a map of its known CAN IDs.
 #
-# Types can be 'voltage', 'temperature', or 'unknown'.
+# Types can be 'voltage', 'temperature', 'total_voltage', or 'unknown'.
 #
 # For 'voltage' types, 'cell_map' maps the zero-based start
 # byte (2, 4, 6) to the one-based cell number.
 #
 # For 'temperature' types, 'sensor_map' maps the zero-based
 # start byte (5, 6, 7) to the one-based sensor number.
+#
+# For 'total_voltage' types, the last two bytes of the data payload
+# are used.
 
 csc_ids:
   1:
@@ -58,7 +61,7 @@ csc_ids:
     '01D0':
       type: unknown
     '01E0':
-      type: unknown
+      type: total_voltage
     '0200':
       type: unknown
   2:
@@ -109,7 +112,7 @@ csc_ids:
     '01D1':
       type: unknown
     '01E1':
-      type: unknown
+      type: total_voltage
     '0201':
       type: unknown
   3:
@@ -160,7 +163,7 @@ csc_ids:
     '01D2':
       type: unknown
     '01E2':
-      type: unknown
+      type: total_voltage
     '0202':
       type: unknown
   4:
@@ -211,7 +214,7 @@ csc_ids:
     '01D3':
       type: unknown
     '01E3':
-      type: unknown
+      type: total_voltage
     '0203':
       type: unknown
   5:
@@ -262,7 +265,7 @@ csc_ids:
     '01D4':
       type: unknown
     '01E4':
-      type: unknown
+      type: total_voltage
     '0204':
       type: unknown
   6:
@@ -313,6 +316,6 @@ csc_ids:
     '01D5':
       type: unknown
     '01E5':
-      type: unknown
+      type: total_voltage
     '0205':
       type: unknown
