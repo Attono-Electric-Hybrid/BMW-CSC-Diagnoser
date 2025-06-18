@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Curses;
 use Redis;
-use Time::HiRes qw(sleep);
+use Time::HiRes qw(sleep usleep);
 use List::Util qw(sum min);
 
 # Define color pair numbers for clarity
@@ -30,9 +30,9 @@ if (has_colors()) {
 }
 
 my ($max_y, $max_x) = (LINES, COLS);
-if ($max_y < 18 || $max_x < 140) {
+if ($max_y < 22 || $max_x < 152) {
     endwin();
-    die "Terminal is too small. Minimum size is 140x18.\n";
+    die "Terminal is too small. Minimum size is 152x22.\n";
 }
 
 # --- Redis Connection ---
@@ -104,7 +104,7 @@ while (1) {
     draw_screen(\%display_data, $is_held, $stats, $median_temp, \%csc_status, $max_x, $max_y);
     
     # 4. Wait
-    sleep(1);
+    usleep(10000);
 }
 
 # --- Cleanup ---
@@ -116,7 +116,7 @@ exit 0;
 sub draw_screen {
     my ($data_ref, $is_held, $msg_stats, $median_temp, $csc_status_ref, $max_x, $max_y) = @_;
     erase();
-
+    
     my $left_margin = 1;
 
     # --- Header & Footer ---
@@ -125,27 +125,21 @@ sub draw_screen {
     addstr(0, $left_margin, "BMW CSC Monitor");
     addstr(0, $max_x - length($time_str) - $left_margin, $time_str);
     addstr($max_y - 1, $left_margin, "Press 'q' to quit, 'h' to hold/un-hold.");
-    addstr($max_y - 1, $max_x - length($copyright) - $left_margin, $copyright);
-
     if ($is_held) {
         attron(A_REVERSE);
         addstr($max_y - 1, 40 + $left_margin, " [DISPLAY HELD] ");
         attroff(A_REVERSE);
     }
     
-    # --- Table Headers ---
-    addstr(2, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Total V | Near   Mid    Far");
-    addstr(3, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- | ------- | ----   ----   ----");
-
-    # --- Table Body ---
+    # --- Voltages Panel ---
+    addstr(2, $left_margin, "--- Voltages ---");
+    addstr(3, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Total (V)");
+    addstr(4, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----  | ---------");
     for my $csc_num (1..6) {
-        my $y_pos = $csc_num + 3;
+        my $y_pos = $csc_num + 4;
         addstr($y_pos, $left_margin, "CSC $csc_num:");
-
         my $voltages_ref = $data_ref->{$csc_num}{voltages} || {};
-        my $temps_ref    = $data_ref->{$csc_num}{temps}    || {};
         my $total_v      = $data_ref->{$csc_num}{total_v};
-        
         my $status = $csc_status_ref->{$csc_num} || 'Absent';
         my $is_stale = ($status ne 'Seen');
         
@@ -153,24 +147,48 @@ sub draw_screen {
             my $x_pos = 10 + $left_margin + (($cell_num - 1) * 6);
             my $v_val = ($is_held || $is_stale) ? undef : $voltages_ref->{$cell_num};
             my $v_str = defined($v_val) ? sprintf("%4.2f", $v_val) : "....";
-            
             if (defined($v_val) && ($v_val > 4.2 || $v_val < 3.0)) {
                 attron(COLOR_PAIR(PAIR_ALERT_CRITICAL));
             }
             addstr($y_pos, $x_pos, $v_str);
             attroff(COLOR_PAIR(PAIR_ALERT_CRITICAL));
         }
-
-        addstr($y_pos, 106 + $left_margin, "|");
+        addstr($y_pos, 107 + $left_margin, "|");
         my $total_v_str = ($is_held || $is_stale || !defined($total_v)) ? "..." : sprintf("%7.3f", $total_v / 1000);
-        addstr($y_pos, 107 + $left_margin, $total_v_str);
-        
-        addstr($y_pos, 116 + $left_margin, "|");
-        my @sensors = ({ num => 1, x => 118 }, { num => 3, x => 125 }, { num => 2, x => 132 });
+        addstr($y_pos, 110 + $left_margin, $total_v_str);
+    }
+    
+    # --- Bottom Row Panels ---
+    my $bottom_panel_y = 12;
 
+    # Statistics Panel (Bottom-Left)
+    my $corruption_rate = ($msg_stats->{total} > 0) ? ($msg_stats->{corrupt} / $msg_stats->{total}) * 100 : 0;
+    addstr($bottom_panel_y, $left_margin, "--- Statistics ---");
+    addstr($bottom_panel_y + 1, $left_margin, "Total Messages Seen: $msg_stats->{total}");
+    addstr($bottom_panel_y + 2, $left_margin, "Corrupted Frames:    $msg_stats->{corrupt}");
+    addstr($bottom_panel_y + 3, $left_margin, "Corruption Rate:     " . sprintf("%.2f%%", $corruption_rate));
+    
+    # Temperatures Panel (Bottom-Middle)
+    my $temp_x_pos = 50;
+    addstr($bottom_panel_y, $temp_x_pos, "--- Temperatures (Median: ".sprintf("%.1fC", $median_temp).") ---");
+    for my $csc_num (1..6) {
+        my $y_pos = $bottom_panel_y + 1 + $csc_num;
+        addstr($y_pos, $temp_x_pos, sprintf("CSC %d: ", $csc_num));
+        my $temps_ref = $data_ref->{$csc_num}{temps} || {};
+        
+        my @sensors = (
+            { name => 'Near', num => 1 },
+            { name => 'Mid',  num => 3 },
+            { name => 'Far',  num => 2 },
+        );
+        
+        my $current_x = $temp_x_pos + 8;
         foreach my $sensor (@sensors) {
-            my $t_val = ($is_held || $is_stale) ? undef : $temps_ref->{$sensor->{num}};
-            my $t_str = defined($t_val) ? sprintf("%4.1f", $t_val) : "....";
+            addstr($y_pos, $current_x, $sensor->{name} . ":");
+            $current_x += length($sensor->{name}) + 1;
+
+            my $t_val = $temps_ref->{$sensor->{num}};
+            my $t_str = defined($t_val) ? sprintf("%4.1f", $t_val) : " ...";
             
             my $color_pair = PAIR_DEFAULT;
             if (defined($t_val)) {
@@ -183,36 +201,23 @@ sub draw_screen {
                     $color_pair = PAIR_TEMP_OK;
                 }
             }
+            
             attron(COLOR_PAIR($color_pair));
-            addstr($y_pos, $sensor->{x} + $left_margin, $t_str);
+            addstr($y_pos, $current_x, $t_str);
             attroff(COLOR_PAIR($color_pair));
+            $current_x += length($t_str) + 1;
         }
     }
     
-    # --- Statistics & Status Panel ---
-    my $corruption_rate = ($msg_stats->{total} > 0) ? ($msg_stats->{corrupt} / $msg_stats->{total}) * 100 : 0;
-    my $stats_y_pos = 11;
-
-    addstr($stats_y_pos, $left_margin, "--- Statistics ---");
-    addstr($stats_y_pos + 1, $left_margin, "Total Messages Seen: $msg_stats->{total}");
-    addstr($stats_y_pos + 2, $left_margin, "Corrupted Frames:    $msg_stats->{corrupt}");
-    addstr($stats_y_pos + 3, $left_margin, "Corruption Rate:     " . sprintf("%.2f%%", $corruption_rate));
-    addstr($stats_y_pos + 4, $left_margin, sprintf("Global Temp Median: %.2fC", $median_temp));
-
-    my $status_x_pos = 119; # Moved to below statistics
-    addstr($stats_y_pos, $status_x_pos, "--- CSC Status ---");
-    
+    # CSC Status Panel (Bottom-Right)
+    my $status_x_pos = 110;
+    addstr($bottom_panel_y, $status_x_pos, "--- CSC Status ---");
     for my $csc_num (1..6) {
         my $status = $csc_status_ref->{$csc_num} || 'Absent';
         my $status_str = sprintf("CSC %d: %-9s", $csc_num, $status);
-        
-        my $color_pair = PAIR_DEFAULT;
-        if ($status eq 'Duplicate' or $status eq 'Absent') {
-            $color_pair = PAIR_ALERT_CRITICAL;
-        }
-
+        my $color_pair = ($status eq 'Seen') ? PAIR_DEFAULT : PAIR_ALERT_CRITICAL;
         attron(COLOR_PAIR($color_pair));
-        addstr($stats_y_pos + 1 + $csc_num, $status_x_pos, $status_str);
+        addstr($bottom_panel_y + 1 + $csc_num, $status_x_pos, $status_str);
         attroff(COLOR_PAIR($color_pair));
     }
 
