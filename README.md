@@ -4,7 +4,11 @@ In development
 
 ## Dependencies
    * Perl
-   * Pipe containing live dump of CAN packets
+   * In theory should work on any OS but I have only tested it on Mint
    * DEBs:
-      * libdancer2-perl 
-      * libanyevent-perl
+      * libyaml-tiny-perl
+      * liblog-log4perl-perl
+      * libredis-perl
+      * libjson-maybexs-perl
+      * redis
+   * 
