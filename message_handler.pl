@@ -57,13 +57,10 @@ while (1) {
 
     # 2. Message Processing Phase
     my $child_process_cmd = "./canusb -d $device_file -s 500000 2>&1";
-    
     open my $child_handle, '-|', $child_process_cmd
         or $log->logdie("Failed to start child process '$child_process_cmd': $!");
     
     $log->info("Reading from child process: $child_process_cmd");
-    
-    # Reverted to a simple blocking read loop
     while (my $line = <$child_handle>) {
         $message_count++;
         $redis->incr('bms:stats:total_messages');
@@ -82,20 +79,20 @@ while (1) {
                 my $now = time();
                 my $update_payload;
                 
-                $redis->set("bms:heartbeat:$csc", $now);
-                
+                # Main heartbeat for CSC presence detection
                 my $csc_freq_key = "bms:msg_times:$csc";
                 $redis->zremrangebyscore($csc_freq_key, '-inf', $now - 3);
                 $redis->zadd($csc_freq_key, $now, "$now:$message_count");
                 $redis->expire($csc_freq_key, 10);
 
                 if ($type eq 'voltage' && $info->{cell_map}) {
+                    $redis->set("bms:heartbeat:voltage:$csc", $now);
                     my @bytes = split /\s+/, $data;
                     my %voltages;
                     foreach my $start_byte (keys %{$info->{cell_map}}) {
                         my $cell_num = $info->{cell_map}->{$start_byte};
                         if (defined $bytes[$start_byte] && defined $bytes[$start_byte + 1]) {
-                            my $voltage = sprintf("%.2f", convert_bytes_to_voltage($bytes[$start_byte], $bytes[$start_byte + 1]));
+                            my $voltage = convert_bytes_to_voltage($bytes[$start_byte], $bytes[$start_byte + 1]);
                             $voltages{$cell_num} = $voltage;
                             $redis->hset("bms:csc:$csc", $cell_num, $voltage);
                         }
@@ -105,6 +102,7 @@ while (1) {
                     $log->trace("[Msg $message_count] Processed voltages for CSC $csc, ID $id");
 
                 } elsif ($type eq 'temperature' && $info->{sensor_map}) {
+                    $redis->set("bms:heartbeat:temp:$csc", $now);
                     my @bytes = split /\s+/, $data;
                     my %sensor_temps;
                     foreach my $byte_index (keys %{$info->{sensor_map}}) {
@@ -120,6 +118,7 @@ while (1) {
                     $log->trace("[Msg $message_count] Processed temperatures for CSC $csc, ID $id");
                 
                 } elsif ($type eq 'total_voltage') {
+                    $redis->set("bms:heartbeat:total_v:$csc", $now);
                     my @bytes = split /\s+/, $data;
                     if (defined $bytes[6] && defined $bytes[7]) {
                         my $val = (hex($bytes[6] . $bytes[7])) * 2;

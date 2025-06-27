@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use Curses;
 use Redis;
-use Time::HiRes qw(sleep usleep);
+use Time::HiRes qw(sleep);
 use List::Util qw(sum min);
 
 # Define color pair numbers for clarity
@@ -78,12 +78,19 @@ while (1) {
                 $csc_status{$csc_num} = 'Seen';
             }
 
-            if ($csc_status{$csc_num} eq 'Seen') {
-                $display_data{$csc_num}{voltages} = { $redis->hgetall("bms:csc:$csc_num") };
-                $display_data{$csc_num}{total_v}  = $redis->get("bms:csc_total_v:$csc_num");
-                my $temps = { $redis->hgetall("bms:csc_temps:$csc_num") };
-                $display_data{$csc_num}{temps} = $temps;
-                push @all_temps, values %{$temps};
+            # Fetch all data regardless of status; drawing will handle staleness
+            $display_data{$csc_num}{voltages} = { $redis->hgetall("bms:csc:$csc_num") };
+            $display_data{$csc_num}{total_v}  = $redis->get("bms:csc_total_v:$csc_num");
+            my $temps = { $redis->hgetall("bms:csc_temps:$csc_num") };
+            $display_data{$csc_num}{temps} = $temps;
+            
+            $display_data{$csc_num}{hb_voltage} = $redis->get("bms:heartbeat:voltage:$csc_num") || 0;
+            $display_data{$csc_num}{hb_total_v} = $redis->get("bms:heartbeat:total_v:$csc_num") || 0;
+            $display_data{$csc_num}{hb_temp}    = $redis->get("bms:heartbeat:temp:$csc_num") || 0;
+            
+            # Only include temps in median calculation if the data is fresh
+            if ((time() - $display_data{$csc_num}{hb_temp}) < 5) {
+                 push @all_temps, values %{$temps};
             }
         }
         
@@ -104,7 +111,7 @@ while (1) {
     draw_screen(\%display_data, $is_held, $stats, $median_temp, \%csc_status, $max_x, $max_y);
     
     # 4. Wait
-    usleep(10000);
+    sleep(1);
 }
 
 # --- Cleanup ---
@@ -133,29 +140,31 @@ sub draw_screen {
     
     # --- Voltages Panel ---
     addstr(2, $left_margin, "--- Voltages ---");
-    addstr(3, 10 + $left_margin, "  1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16   | Total (V)");
-    addstr(4, 10 + $left_margin, "----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- ----- -----  | ---------");
+    addstr(3, 10 + $left_margin, "   1       2       3       4       5       6       7       8       9      10      11      12      13      14      15      16    | Total (V)");
+    addstr(4, 10 + $left_margin, "------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------  ------ | ---------");
     for my $csc_num (1..6) {
         my $y_pos = $csc_num + 4;
         addstr($y_pos, $left_margin, "CSC $csc_num:");
+        
+        my $is_voltage_stale = (time() - ($data_ref->{$csc_num}{hb_voltage} || 0)) > 5;
+        my $is_total_v_stale = (time() - ($data_ref->{$csc_num}{hb_total_v} || 0)) > 5;
+
         my $voltages_ref = $data_ref->{$csc_num}{voltages} || {};
         my $total_v      = $data_ref->{$csc_num}{total_v};
-        my $status = $csc_status_ref->{$csc_num} || 'Absent';
-        my $is_stale = ($status ne 'Seen');
         
         for my $cell_num (1..16) {
-            my $x_pos = 10 + $left_margin + (($cell_num - 1) * 6);
-            my $v_val = ($is_held || $is_stale) ? undef : $voltages_ref->{$cell_num};
-            my $v_str = defined($v_val) ? sprintf("%4.2f", $v_val) : "....";
+            my $x_pos = 10 + $left_margin + (($cell_num - 1) * 7);
+            my $v_val = ($is_held || $is_voltage_stale) ? undef : $voltages_ref->{$cell_num};
+            my $v_str = defined($v_val) ? sprintf("%5.3f", $v_val) : ".....";
             if (defined($v_val) && ($v_val > 4.2 || $v_val < 3.0)) {
                 attron(COLOR_PAIR(PAIR_ALERT_CRITICAL));
             }
             addstr($y_pos, $x_pos, $v_str);
             attroff(COLOR_PAIR(PAIR_ALERT_CRITICAL));
         }
-        addstr($y_pos, 107 + $left_margin, "|");
-        my $total_v_str = ($is_held || $is_stale || !defined($total_v)) ? "..." : sprintf("%7.3f", $total_v / 1000);
-        addstr($y_pos, 110 + $left_margin, $total_v_str);
+        addstr($y_pos, 118 + $left_margin, "|");
+        my $total_v_str = ($is_held || $is_total_v_stale || !defined($total_v)) ? "..." : sprintf("%7.3f", $total_v / 1000);
+        addstr($y_pos, 121 + $left_margin, $total_v_str);
     }
     
     # --- Bottom Row Panels ---
@@ -174,20 +183,18 @@ sub draw_screen {
     for my $csc_num (1..6) {
         my $y_pos = $bottom_panel_y + 1 + $csc_num;
         addstr($y_pos, $temp_x_pos, sprintf("CSC %d: ", $csc_num));
+        
+        my $is_temp_stale = (time() - ($data_ref->{$csc_num}{hb_temp} || 0)) > 5;
         my $temps_ref = $data_ref->{$csc_num}{temps} || {};
         
-        my @sensors = (
-            { name => 'Near', num => 1 },
-            { name => 'Mid',  num => 3 },
-            { name => 'Far',  num => 2 },
-        );
+        my @sensors = ({ name => 'Near', num => 1 }, { name => 'Mid',  num => 3 }, { name => 'Far',  num => 2 });
         
         my $current_x = $temp_x_pos + 8;
         foreach my $sensor (@sensors) {
             addstr($y_pos, $current_x, $sensor->{name} . ":");
             $current_x += length($sensor->{name}) + 1;
 
-            my $t_val = $temps_ref->{$sensor->{num}};
+            my $t_val = ($is_held || $is_temp_stale) ? undef : $temps_ref->{$sensor->{num}};
             my $t_str = defined($t_val) ? sprintf("%4.1f", $t_val) : " ...";
             
             my $color_pair = PAIR_DEFAULT;
@@ -205,7 +212,7 @@ sub draw_screen {
             attron(COLOR_PAIR($color_pair));
             addstr($y_pos, $current_x, $t_str);
             attroff(COLOR_PAIR($color_pair));
-            $current_x += length($t_str) + 1;
+            $current_x += length($t_str) + 2;
         }
     }
     
