@@ -11,4 +11,5 @@ In development
       * libredis-perl
       * libjson-maybexs-perl
       * redis
+      * libdevice-serialport-perl
    * 
