@@ -16,9 +16,11 @@ WriteMakefile(
     },
     BUILD_REQUIRES => {
         'Test::More' => '0',
+        'Test::MockModule' => '0.177',
     },
     PREREQ_PM => {
         'Device::SerialPort' => '1.04',
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean => { FILES => 'CAN-Adapter-Lawicel-*' },
+);
