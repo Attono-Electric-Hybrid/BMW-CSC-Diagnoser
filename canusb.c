@@ -353,21 +353,28 @@ static int convert_from_hex(const char *hex_string, unsigned char *bin_string, i
 
   high = -1;
   n1 = n2 = 0;
-  while (hex_string[n1] != '\0') {
+  while (hex_string[n1] != '\0' && n2 < bin_string_len) {
     if (hex_value(hex_string[n1]) >= 0) {
       if (high == -1) {
         high = hex_string[n1];
       } else {
         bin_string[n2] = hex_value(high) * 16 + hex_value(hex_string[n1]);
         n2++;
-        if (n2 >= bin_string_len) {
-          printf("hex string truncated to %d bytes\n", n2);
-          break;
-        }
         high = -1;
       }
     }
     n1++;
+  }
+
+  /* If we exited the loop because the buffer was full, check if there was more data to be read. */
+  if (n2 == bin_string_len) {
+    while (hex_string[n1] != '\0') {
+      if (hex_value(hex_string[n1]) >= 0) {
+        fprintf(stderr, "Warning: hex string truncated to %d bytes\n", bin_string_len);
+        break;
+      }
+      n1++;
+    }
   }
 
   return n2;
