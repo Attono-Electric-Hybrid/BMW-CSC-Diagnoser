@@ -46,12 +46,15 @@ my $message_count = 0;
 while (1) {
     
     # 1. Device Discovery Phase
-    unless (-e $device_file && -r $device_file) {
-        $log->warn("Device '$device_file' not found or not readable. Awaiting connection...");
-        while (1) {
-            sleep(5);
-            last if (-e $device_file && -r $device_file);
-        }
+    # Wait for the device to appear if it's not there.
+    if (!-e $device_file) {
+        $log->warn("Device '$device_file' not found. Awaiting connection...");
+        sleep(5) until -e $device_file;
+    }
+
+    # Now that the device file exists, check if it's readable. If not, it's a fatal error.
+    unless (-r $device_file) {
+        $log->logdie("Device '$device_file' exists but is not readable. Please check permissions.");
     }
     $log->info("Device '$device_file' detected. Starting CAN process.");
 
@@ -121,7 +124,7 @@ while (1) {
                     $redis->set("bms:heartbeat:total_v:$csc", $now);
                     my @bytes = split /\s+/, $data;
                     if (defined $bytes[6] && defined $bytes[7]) {
-                        my $val = (hex($bytes[6] . $bytes[7])) * 2;
+                        my $val = (hex($bytes[6] . $bytes[7])) * 2; # <--- The multiplication factor is here.
                         $redis->set("bms:csc_total_v:$csc", $val);
                         $update_payload = { csc => $csc, id => $id, type => 'total_voltage', value => $val };
                         $redis->publish('bms:updates', $json_coder->encode($update_payload));
