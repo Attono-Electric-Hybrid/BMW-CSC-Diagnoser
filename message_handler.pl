@@ -102,7 +102,7 @@ while (1) {
                     }
                     $update_payload = { csc => $csc, id => $id, type => 'voltage', voltages => \%voltages };
                     $redis->publish('bms:updates', $json_coder->encode($update_payload));
-                    $log->trace("[Msg $message_count] Processed voltages for CSC $csc, ID $id");
+                    $log->info("[Msg $message_count] Processed voltages for CSC $csc, ID $id");
 
                 } elsif ($type eq 'temperature' && $info->{sensor_map}) {
                     $redis->set("bms:heartbeat:temp:$csc", $now);
