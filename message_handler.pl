@@ -87,9 +87,6 @@ while (1) {
     $log->info("CAN adapter opened on '$device_file' at ${can_speed}bps. Starting event loop.");
 
     # 2. Event Loop
-    # Get the file descriptor from the adapter for use with IO::Select.
-    my $select = IO::Select->new( $adapter->get_fileno() );
-
     while (1) {
         # A. Check if it's time to send a query
         if (time() - $last_query_time >= $query_interval_s) {
@@ -104,13 +101,12 @@ while (1) {
             $last_query_time = time();
         }
 
-        # B. Check for incoming data (with a 50ms timeout)
-        if ($select->can_read(0.05)) {
-            my $bytes_read = $adapter->fill_buffer();
-            unless (defined $bytes_read) {
-                $log->warn("Adapter disconnected or read error.");
-                last; # Break out of the inner event loop
-            }
+        # B. Fill the buffer with any available data from the adapter.
+        # This is a non-blocking read.
+        my $bytes_read = $adapter->fill_buffer();
+        unless (defined $bytes_read) {
+            $log->warn("Adapter disconnected or read error.");
+            last; # Break out of the inner event loop
         }
 
         # C. Process all complete frames in the buffer
@@ -191,6 +187,9 @@ while (1) {
                 $log->debug("[Msg $message_count] Received adapter status: $frame->{type}");
             }
         }
+
+        # D. Sleep for a short time to prevent a busy-loop when no data is available.
+        sleep(0.01);
     }
 
     $log->warn("Connection lost. Closing handle and rescanning...");

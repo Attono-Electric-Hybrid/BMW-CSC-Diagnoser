@@ -5,6 +5,7 @@ use strict;
 use warnings;
 
 use Device::SerialPort;
+use Time::HiRes qw(time sleep);
 
 our $VERSION = '0.01';
 
@@ -97,8 +98,26 @@ sub open {
     $port->baudrate($self->{baudrate}) || die "Can't set baudrate to $self->{baudrate}: $!";
     $port->databits(8)                 || die "Can't set databits to 8: $!";
     $port->parity("none")              || die "Can't set parity to none: $!";
+    # The original C code clears the CSTOPB flag (opts.c_cflag &= ~CSTOPB),
+    # which means it uses one stop bit.
     $port->stopbits(1)                 || die "Can't set stopbits to 1: $!";
     $port->handshake("none")            || die "Can't set handshake to none: $!";
+
+    # Set timeouts for non-blocking reads, mimicking O_NONBLOCK in the C code.
+    # A 1ms constant timeout is effectively non-blocking.
+    $port->read_const_time(1); # in ms
+    $port->read_char_time(0);  # in ms
+    # Disable output post-processing to send raw bytes, matching cfmakeraw() in C.
+    $port->stty_opost(0);
+    # Disable CR->NL translation on input, also part of cfmakeraw().
+    # This is critical for receiving the '\r' ACK character correctly.
+    $port->stty_icrnl(0);
+
+    $port->write_settings()            || die "Can't apply serial port settings: $!";
+
+    # Purge any old data from the OS and adapter buffers and wait a moment.
+    $port->purge_rx();
+    sleep(0.1);
 
     $self->{handle}  = $port;
     $self->{is_open} = 1;
@@ -127,6 +146,11 @@ sub open_bus {
     die "Adapter is not open. Call open() first." unless $self->{is_open};
     my $speed = $args{can_speed} || 500000;
 
+    # Purge any stale data from OS/adapter buffers right before we send our command
+    # and expect a specific response. This is crucial on an active bus.
+    $self->{handle}->purge_rx();
+    $self->{_in_buffer} = '';
+
     my $speed_code = $CAN_SPEED_MAP{$speed}
         or die "Unsupported CAN speed: $speed";
 
@@ -137,7 +161,8 @@ sub open_bus {
         0x01,       # Frame type: Standard
         0, 0, 0, 0, # Filter ID (not used)
         0, 0, 0, 0, # Mask ID (not used)
-        0x00,       # Mode: Normal
+        0x00,       # Mode: Normal (0x01 for listen-only)
+        0x00,       # Unused byte, to match C implementation's 18-byte payload
         0x01,       # Constant
         0, 0, 0, 0  # Unused
     );
@@ -148,8 +173,62 @@ sub open_bus {
     my $written = $self->{handle}->write($frame);
     die "Failed to write settings command to adapter: $!" unless $written == length($frame);
 
-    # A more robust implementation might wait for an ACK from the device here.
-    return 1;
+    # Wait for an ACK (\r) from the device to confirm the command was accepted.
+    my $timeout = 1; # 1 second timeout
+    my $end_time = time() + $timeout;
+
+    while (time() < $end_time) {
+        # This is non-blocking, so it's safe in a loop
+        $self->fill_buffer(); 
+        # Process all frames in the buffer, looking for the ACK. This is much
+        # more efficient than the previous "check-one-and-sleep" approach.
+        while (my $response = $self->read_frame()) {
+            return 1 if $response->{type} eq 'ack';
+            # Other frames (data, error) are ignored during this handshake.
+        }
+        sleep(0.05); # 50ms sleep to not busy-wait
+    }
+
+    # If we get here, we timed out.
+    die "Did not receive ACK from adapter after sending settings within ${timeout}s. Check connection/speed.";
+}
+
+=head2 close_bus
+
+Sends the command to close the CAN bus. This can be useful to reset the
+adapter's state before sending other commands.
+
+Returns true if an ACK was received, false otherwise. Does not die on timeout.
+
+=cut
+
+sub close_bus {
+    my ($self) = @_;
+    die "Adapter is not open. Call open() first." unless $self->{is_open};
+
+    # Purge buffers to ensure we're reading a fresh response
+    $self->{handle}->purge_rx();
+    $self->{_in_buffer} = '';
+
+    my $cmd = "C\r";
+    my $written = $self->{handle}->write($cmd);
+    die "Failed to write close command to adapter: $!" unless $written == length($cmd);
+
+    # Wait for an ACK (\r) from the device to confirm.
+    my $timeout = 0.5; # Half a second is plenty
+    my $end_time = time() + $timeout;
+
+    while (time() < $end_time) {
+        $self->fill_buffer();
+        while (my $response = $self->read_frame()) {
+            return 1 if $response->{type} eq 'ack';
+        }
+        sleep(0.05);
+    }
+    
+    # It's okay if we don't get an ACK, the adapter might have been closed already.
+    # This is a best-effort reset.
+    return 0;
 }
 
 =head2 send
@@ -284,6 +363,46 @@ sub read_frame {
     return { type => 'error', reason => 'garbage', details => 'Unexpected data from adapter', raw => unpack('H*', $garbage) };
 }
 
+=head2 get_version
+
+Requests the firmware version from the adapter. This is a simple way to test
+basic communication.
+
+Returns the version string on success, or dies on timeout.
+
+=cut
+
+sub get_version {
+    my ($self) = @_;
+    die "Adapter is not open. Call open() first." unless $self->{is_open};
+
+    # Purge buffers to ensure we're reading a fresh response
+    $self->{handle}->purge_rx();
+    $self->{_in_buffer} = '';
+
+    my $cmd = "V\r";
+    my $written = $self->{handle}->write($cmd);
+    die "Failed to write version command to adapter: $!" unless $written == length($cmd);
+
+    my $timeout = 1; # 1 second timeout
+    my $end_time = time() + $timeout;
+    my $version_string;
+
+    while (time() < $end_time) {
+        $self->fill_buffer();
+        # The response is not a standard frame, so we check the raw buffer
+        if ($self->{_in_buffer} =~ s/^(V[^\r]*\r)//) {
+            $version_string = $1;
+            last;
+        }
+        sleep(0.05);
+    }
+
+    die "Did not receive a version response from adapter within ${timeout}s" unless $version_string;
+    
+    return $version_string;
+}
+
 =head2 get_handle
 
 Returns the underlying Device::SerialPort file handle.
@@ -294,20 +413,6 @@ sub get_handle {
     my ($self) = @_;
     return $self->{handle};
 }
-
-=head2 get_fileno
-
-Returns the underlying OS file descriptor number for use with `IO::Select`.
-
-=cut
-
-sub get_fileno {
-    my ($self) = @_;
-    die "Adapter is not open. Call open() first." unless $self->{is_open};
-    # Call the fileno() method on the handle object, not the built-in function.
-    return $self->{handle}->fileno();
-}
-
 
 =head2 close
 

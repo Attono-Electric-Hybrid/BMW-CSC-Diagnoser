@@ -14,14 +14,21 @@ my $serial_mock = Test::MockModule->new('Device::SerialPort');
 
 my $written_data;
 my $read_buffer = '';
-
+# Create a real, but in-memory, filehandle to be blessed for the mock.
+# This allows the built-in fileno() to work on our mock object.
+open my $mock_fh, '+>', \my $in_memory_buffer;
 $serial_mock->mock(
-    'new'       => sub { bless {}, shift },
+    'new'       => sub { bless $mock_fh, shift },
     'baudrate'  => sub {1},
     'databits'  => sub {1},
     'parity'    => sub {1},
     'stopbits'  => sub {1},
+    'read_char_time' => sub {1},
+    'read_const_time' => sub {1},
+    'stty_icrnl' => sub {1},
+    'stty_opost' => sub {1},
     'handshake' => sub {1},
+    'write_settings' => sub {1},
     'write'     => sub {
         my ($self, $data) = @_;
         $written_data = $data;
@@ -32,6 +39,7 @@ $serial_mock->mock(
         my $chunk = substr($read_buffer, 0, $count, '');
         return (length($chunk), $chunk);
     },
+    'purge_rx' => sub {1},
     'close' => sub {1},
 );
 
