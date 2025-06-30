@@ -73,6 +73,7 @@ sub new {
         baudrate => $args{baudrate} || 2000000,
         handle   => undef, # Will hold the serial port handle
         is_open  => 0,
+        _in_buffer => '',
     };
 
     return bless $self, $class;
@@ -149,6 +150,125 @@ sub open_bus {
 
     # A more robust implementation might wait for an ACK from the device here.
     return 1;
+}
+
+=head2 send
+
+Sends a data frame to the CAN bus.
+
+=over
+
+=item * C<id>
+
+The CAN ID as a hex string (e.g., '1E0').
+
+=item * C<data>
+
+The data payload as a hex string (e.g., '5ed00000000070d3').
+
+=back
+
+Returns true on success, false on failure.
+
+=cut
+
+sub send {
+    my ($self, %args) = @_;
+    die "Adapter is not open. Call open() first." unless $self->{is_open};
+
+    my $id_hex = $args{id} or die "send() requires 'id'";
+    my $data_hex = $args{data} or die "send() requires 'data'";
+
+    my $id = hex($id_hex);
+    my @data_bytes = map { hex } ($data_hex =~ m/../g);
+    my $dlc = @data_bytes;
+
+    die "DLC must be between 0 and 8" if $dlc > 8;
+
+    # For now, assume standard frames as that's all the system uses
+    my $info_byte = 0xC0 | $dlc; # 0b11000000 | DLC
+    
+    my @frame_bytes;
+    push @frame_bytes, 0xaa;
+    push @frame_bytes, $info_byte;
+    push @frame_bytes, $id & 0xFF; # LSB
+    push @frame_bytes, ($id >> 8) & 0xFF; # MSB
+    push @frame_bytes, @data_bytes;
+    push @frame_bytes, 0x55;
+
+    my $frame_packed = pack('C*', @frame_bytes);
+    my $written = $self->{handle}->write($frame_packed);
+    
+    return $written == length($frame_packed);
+}
+
+=head2 fill_buffer
+
+Reads available data from the serial port and adds it to the internal buffer.
+This is intended to be called when IO::Select indicates the handle is readable.
+
+Returns the number of bytes read, 0 on timeout, or undef on error.
+
+=cut
+
+sub fill_buffer {
+    my ($self) = @_;
+    my ($count, $data) = $self->{handle}->read(256);
+    if (defined $count && $count > 0) {
+        $self->{_in_buffer} .= $data;
+    }
+    return $count;
+}
+
+=head2 read_frame
+
+Attempts to parse a single, complete CAN frame from the internal buffer.
+
+Returns a hashref representing the frame, or undef if no complete frame is available.
+
+=cut
+
+sub read_frame {
+    my ($self) = @_;
+
+    # Loop to allow for resyncing after corrupted data
+    while (length $self->{_in_buffer} > 1) {
+        # 1. Sync to start byte 0xaa
+        my $start_pos = index($self->{_in_buffer}, "\xaa");
+        
+        # If no start byte, the whole buffer is garbage.
+        if ($start_pos == -1) {
+            $self->{_in_buffer} = '';
+            return undef;
+        }
+        # Discard any garbage before the start byte
+        $self->{_in_buffer} = substr($self->{_in_buffer}, $start_pos) if $start_pos > 0;
+
+        # We need at least 2 bytes for the header
+        return undef if length($self->{_in_buffer}) < 2;
+
+        my $info_byte = unpack('C', substr($self->{_in_buffer}, 1, 1));
+
+        if (($info_byte >> 4) == 0x0C) { # Data frame
+            my $dlc = $info_byte & 0x0F;
+            my $expected_len = $dlc + 5;
+            return undef if length($self->{_in_buffer}) < $expected_len;
+
+            my $frame_raw = substr($self->{_in_buffer}, 0, $expected_len, '');
+            next if substr($frame_raw, -1, 1) ne "\x55"; # Corrupted, try again
+
+            my @bytes = unpack('C*', $frame_raw);
+            my $id = ($bytes[3] << 8) | $bytes[2];
+            my @data_bytes = @bytes[4 .. (4 + $dlc - 1)];
+            return { type => 'data', id => sprintf("%03X", $id), dlc => $dlc, data => \@data_bytes };
+        }
+        else { # Unknown frame type, discard the 0xaa and resync
+            $self->{_in_buffer} = substr($self->{_in_buffer}, 1);
+            next;
+        }
+    }
+
+    return undef; # No complete frame in buffer
 }
 
 =head2 get_handle
