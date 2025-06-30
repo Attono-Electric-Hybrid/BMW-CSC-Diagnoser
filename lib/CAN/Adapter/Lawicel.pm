@@ -231,44 +231,57 @@ Returns a hashref representing the frame, or undef if no complete frame is avail
 sub read_frame {
     my ($self) = @_;
 
-    # Loop to allow for resyncing after corrupted data
-    while (length $self->{_in_buffer} > 1) {
-        # 1. Sync to start byte 0xaa
-        my $start_pos = index($self->{_in_buffer}, "\xaa");
-        
-        # If no start byte, the whole buffer is garbage.
-        if ($start_pos == -1) {
-            $self->{_in_buffer} = '';
-            return undef;
-        }
-        # Discard any garbage before the start byte
-        $self->{_in_buffer} = substr($self->{_in_buffer}, $start_pos) if $start_pos > 0;
+    # Return undef if buffer is empty, signalling to the caller to fill it.
+    return undef if length($self->{_in_buffer}) == 0;
 
-        # We need at least 2 bytes for the header
+    my $first_char = substr($self->{_in_buffer}, 0, 1);
+
+    # Handle single-character ACK/NACK responses from the adapter
+    if ($first_char eq "\r") {
+        substr($self->{_in_buffer}, 0, 1, ''); # Consume the character
+        return { type => 'ack' };
+    }
+    if ($first_char eq "\a") {
+        substr($self->{_in_buffer}, 0, 1, ''); # Consume the character
+        return { type => 'nack' };
+    }
+
+    # Handle multi-byte data frames, which start with 0xaa
+    if ($first_char eq "\xaa") {
+        # We need at least 2 bytes for a minimal header. If not, wait for more data.
         return undef if length($self->{_in_buffer}) < 2;
 
         my $info_byte = unpack('C', substr($self->{_in_buffer}, 1, 1));
 
-        if (($info_byte >> 4) == 0x0C) { # Data frame
+        if (($info_byte >> 4) == 0x0C) { # This is a standard CAN data frame
             my $dlc = $info_byte & 0x0F;
-            my $expected_len = $dlc + 5;
+            my $expected_len = $dlc + 5; # start(1)+info(1)+id(2)+dlc+end(1)
+            
+            # If we don't have the full frame yet, wait for more data.
             return undef if length($self->{_in_buffer}) < $expected_len;
 
             my $frame_raw = substr($self->{_in_buffer}, 0, $expected_len, '');
-            next if substr($frame_raw, -1, 1) ne "\x55"; # Corrupted, try again
 
+            if (substr($frame_raw, -1, 1) ne "\x55") {
+                return { type => 'error', reason => 'corrupted', details => 'Corrupted data from adapter (bad end byte)', raw => unpack('H*', $frame_raw) };
+            }
+
+            # This is a valid frame, parse and return it.
             my @bytes = unpack('C*', $frame_raw);
             my $id = ($bytes[3] << 8) | $bytes[2];
             my @data_bytes = @bytes[4 .. (4 + $dlc - 1)];
             return { type => 'data', id => sprintf("%03X", $id), dlc => $dlc, data => \@data_bytes };
         }
-        else { # Unknown frame type, discard the 0xaa and resync
-            $self->{_in_buffer} = substr($self->{_in_buffer}, 1);
-            next;
+        else {
+            # It started with 0xaa but isn't a known frame type. Report an error.
+            my $frame_raw = substr($self->{_in_buffer}, 0, 2, '');
+            return { type => 'error', reason => 'unknown_type', details => 'Unrecognized frame type from adapter', raw => unpack('H*', $frame_raw) };
         }
     }
 
-    return undef; # No complete frame in buffer
+    # If we get here, the first character is not a known start of a frame. It's garbage.
+    my $garbage = substr($self->{_in_buffer}, 0, 1, '');
+    return { type => 'error', reason => 'garbage', details => 'Unexpected data from adapter', raw => unpack('H*', $garbage) };
 }
 
 =head2 get_handle
@@ -281,6 +294,20 @@ sub get_handle {
     my ($self) = @_;
     return $self->{handle};
 }
+
+=head2 get_fileno
+
+Returns the underlying OS file descriptor number for use with `IO::Select`.
+
+=cut
+
+sub get_fileno {
+    my ($self) = @_;
+    die "Adapter is not open. Call open() first." unless $self->{is_open};
+    # Call the fileno() method on the handle object, not the built-in function.
+    return $self->{handle}->fileno();
+}
+
 
 =head2 close
 

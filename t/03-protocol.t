@@ -62,20 +62,50 @@ subtest 'read_frame method' => sub {
     is($frame->{dlc}, 8, 'Correct DLC parsed');
     is_deeply($frame->{data}, [0xe4, 0xd0, 0x0e, 0x18, 0x0e, 0x18, 0x0e, 0x18], 'Correct data parsed');
     
-    # Test 2: Garbage at the beginning
-    $read_buffer = pack('C*', 0x11, 0x22, 0xaa, 0xC1, 0x83, 0x01, 0x3a, 0x55);
+    # Test 2: Garbage at the beginning followed by a good frame
+    $read_buffer = pack('C*', 0x11, 0xaa, 0xC1, 0x83, 0x01, 0x3a, 0x55);
     $adapter->fill_buffer();
-    $frame = $adapter->read_frame();
-    is($frame->{id}, '183', 'Correct ID parsed after garbage');
-    is($frame->{dlc}, 1, 'Correct DLC parsed');
-    is_deeply($frame->{data}, [0x3a], 'Correct data parsed');
+    my $garbage_frame = $adapter->read_frame();
+    is_deeply($garbage_frame, { type => 'error', reason => 'garbage', details => 'Unexpected data from adapter', raw => '11' }, 'Correctly identifies garbage byte');
+
+    my $good_frame = $adapter->read_frame();
+    is($good_frame->{id}, '183', 'Correct ID parsed after garbage');
+    is($good_frame->{dlc}, 1, 'Correct DLC parsed');
+    is_deeply($good_frame->{data}, [0x3a], 'Correct data parsed');
     
     # Test 3: Corrupted frame (bad end byte) followed by good frame
     $read_buffer = pack('C*', 0xaa, 0xC1, 0x83, 0x01, 0x3a, 0x00, 0xaa, 0xC1, 0x84, 0x01, 0x3b, 0x55);
     $adapter->fill_buffer();
-    $frame = $adapter->read_frame();
-    is($frame->{id}, '184', 'Good frame parsed after corrupted one');
-    is_deeply($frame->{data}, [0x3b], 'Correct data parsed from second frame');
+    my $corrupted_frame = $adapter->read_frame();
+    is($corrupted_frame->{type}, 'error', 'Corrupted frame returns error type');
+    is($corrupted_frame->{reason}, 'corrupted', 'Error reason is "corrupted"');
+    is($corrupted_frame->{details}, 'Corrupted data from adapter (bad end byte)', 'Correct details for corrupted frame');
+    is($corrupted_frame->{raw}, 'aac183013a00', 'Error contains raw frame data');
+
+    $good_frame = $adapter->read_frame();
+    is($good_frame->{id}, '184', 'Good frame parsed after corrupted one');
+    is_deeply($good_frame->{data}, [0x3b], 'Correct data parsed from second frame');
+
+    # Test 4: ACK response
+    $read_buffer = "\r";
+    $adapter->fill_buffer();
+    my $ack_frame = $adapter->read_frame();
+    is_deeply($ack_frame, { type => 'ack' }, 'Correctly parses ACK');
+
+    # Test 5: NACK response
+    $read_buffer = "\a";
+    $adapter->fill_buffer();
+    my $nack_frame = $adapter->read_frame();
+    is_deeply($nack_frame, { type => 'nack' }, 'Correctly parses NACK');
+
+    # Test 6: Unknown frame type
+    $read_buffer = pack('C*', 0xaa, 0xB8, 0x01, 0x02, 0x03);
+    $adapter->fill_buffer();
+    my $unknown_frame = $adapter->read_frame();
+    is($unknown_frame->{type}, 'error', 'Unknown frame returns error type');
+    is($unknown_frame->{reason}, 'unknown_type', 'Error reason is "unknown_type"');
+    is($unknown_frame->{details}, 'Unrecognized frame type from adapter', 'Correct details for unknown type');
+    is($unknown_frame->{raw}, 'aab8', 'Error contains raw header');
 };
 
 done_testing();

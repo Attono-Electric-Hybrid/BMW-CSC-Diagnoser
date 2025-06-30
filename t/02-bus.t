@@ -66,4 +66,15 @@ $adapter->close();
 is($adapter->{is_open}, 0, 'Adapter is_open is false after close()');
 is($adapter->{handle}, undef, 'Adapter handle is undef after close()');
 
+# Test 6: get_fileno() dies if not open
+my $closed_adapter = CAN::Adapter::Lawicel->new();
+eval { $closed_adapter->get_fileno() };
+like($@, qr/Adapter is not open/, 'get_fileno() dies if adapter is not open');
+
+# Test 7: get_fileno() works when open
+$adapter->open();
+$serial_mock->mock('fileno', sub { return 42; });
+my $fileno = $adapter->get_fileno();
+is($fileno, 42, 'get_fileno() returns the file descriptor when open');
+
 done_testing();
