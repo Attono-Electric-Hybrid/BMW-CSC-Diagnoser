@@ -11,24 +11,34 @@ use Test::MockModule;
 
 # We need to mock Device::SerialPort to avoid needing real hardware
 my $serial_mock = Test::MockModule->new('Device::SerialPort');
+my $termios_mock = Test::MockModule->new('Linux::Termios2');
 
 my $written_data;
 my $read_buffer = '';
 # Create a real, but in-memory, filehandle to be blessed for the mock.
 # This allows the built-in fileno() to work on our mock object.
 open my $mock_fh, '+>', \my $in_memory_buffer;
+
+# Mock Linux::Termios2 to do nothing, as we don't test low-level setup here.
+$termios_mock->mock('new' => sub { bless {}, shift });
+$termios_mock->mock('set' => sub {1});
+
 $serial_mock->mock(
-    'new'       => sub { bless $mock_fh, shift },
-    'baudrate'  => sub {1},
-    'databits'  => sub {1},
-    'parity'    => sub {1},
-    'stopbits'  => sub {1},
+    'new'       => sub {
+        my $class = shift;
+        # The real object is a hash containing the file descriptor (FD).
+        # We mock this structure to allow the main code to access $port->{FD}.
+        my $mock_obj = { FD => fileno($mock_fh) };
+        return bless $mock_obj, $class;
+    },
+    'FILENO' => sub {
+        my $self = shift;
+        # The real FILENO method returns the internal file descriptor.
+        return $self->{FD};
+    },
     'read_char_time' => sub {1},
     'read_const_time' => sub {1},
-    'stty_icrnl' => sub {1},
-    'stty_opost' => sub {1},
     'write_settings' => sub {1},
-    'handshake' => sub {1},
     'write'     => sub {
         my ($self, $data) = @_;
         $written_data = $data;

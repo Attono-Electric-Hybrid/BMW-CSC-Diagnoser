@@ -2,13 +2,15 @@
 
 use strict;
 use warnings;
-use Test::More;
 
 # Make sure our local lib is in the path
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
+# Load all necessary testing and support modules
 use Time::HiRes qw(time sleep);
+use Test::More;
+use Test::Exception; # Provides lives_ok()
 use CAN::Adapter::Lawicel;
 
 my $device = '/dev/ttyUSB0';

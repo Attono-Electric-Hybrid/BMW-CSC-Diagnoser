@@ -17,9 +17,11 @@ WriteMakefile(
     BUILD_REQUIRES => {
         'Test::More' => '0',
         'Test::MockModule' => '0.177',
+        'Test::Exception' => '0',
     },
     PREREQ_PM => {
         'Device::SerialPort' => '1.04',
+        'Linux::Termios2'    => '0', # For custom baud rate support
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean => { FILES => 'CAN-Adapter-Lawicel-*' },

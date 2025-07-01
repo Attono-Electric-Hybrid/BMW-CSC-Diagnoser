@@ -5,6 +5,7 @@ use strict;
 use warnings;
 
 use Device::SerialPort;
+use Linux::Termios2;
 use Time::HiRes qw(time sleep);
 
 our $VERSION = '0.01';
@@ -71,6 +72,8 @@ sub new {
 
     my $self = {
         device   => $args{device}   || '/dev/ttyUSB0',
+        # The local C implementation (archive/canusb.c) uses a default serial
+        # baud rate of 2,000,000.
         baudrate => $args{baudrate} || 2000000,
         handle   => undef, # Will hold the serial port handle
         is_open  => 0,
@@ -92,27 +95,36 @@ sub open {
     my ($self) = @_;
     return 1 if $self->{is_open};
 
+    # Use Device::SerialPort to get a file handle.
     my $port = Device::SerialPort->new($self->{device})
         || die "Can't open $self->{device}: $!";
 
-    $port->baudrate($self->{baudrate}) || die "Can't set baudrate to $self->{baudrate}: $!";
-    $port->databits(8)                 || die "Can't set databits to 8: $!";
-    $port->parity("none")              || die "Can't set parity to none: $!";
-    # The original C code clears the CSTOPB flag (opts.c_cflag &= ~CSTOPB),
-    # which means it uses one stop bit.
-    $port->stopbits(1)                 || die "Can't set stopbits to 1: $!";
-    $port->handshake("none")            || die "Can't set handshake to none: $!";
+    # Use Linux::Termios2 to apply the low-level settings, which is necessary
+    # for the non-standard 2M baud rate. This is a direct translation of the
+    # C code's termios2 setup.
+    # We use the FILENO method to get the raw file descriptor, which is then
+    # used by Linux::Termios2 to configure the port.
+    my $tio = Linux::Termios2->new( $port->FILENO )
+        or die "Could not get termios2 settings for device: $!";
+
+    # Clear standard baud bits and set the custom baud flag (BOTHER)
+    $tio->c_cflag &= ~Linux::Termios2::CBAUD();
+    $tio->c_cflag = Linux::Termios2::BOTHER() | Linux::Termios2::CS8() | Linux::Termios2::CSTOPB();
+
+    # Set input, output, and local flags
+    $tio->c_iflag = Linux::Termios2::IGNPAR();
+    $tio->c_oflag = 0;
+    $tio->c_lflag = 0;
+
+    # Set the custom input and output speeds
+    $tio->c_ispeed = $self->{baudrate};
+    $tio->c_ospeed = $self->{baudrate};
+
+    $tio->set() or die "Could not set termios2 settings for device: $!";
 
     # Set timeouts for non-blocking reads, mimicking O_NONBLOCK in the C code.
-    # A 1ms constant timeout is effectively non-blocking.
     $port->read_const_time(1); # in ms
     $port->read_char_time(0);  # in ms
-    # Disable output post-processing to send raw bytes, matching cfmakeraw() in C.
-    $port->stty_opost(0);
-    # Disable CR->NL translation on input, also part of cfmakeraw().
-    # This is critical for receiving the '\r' ACK character correctly.
-    $port->stty_icrnl(0);
-
     $port->write_settings()            || die "Can't apply serial port settings: $!";
 
     # Purge any old data from the OS and adapter buffers and wait a moment.
