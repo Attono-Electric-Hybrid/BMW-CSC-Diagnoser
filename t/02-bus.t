@@ -9,61 +9,52 @@ use lib "$Bin/../lib";
 use CAN::Adapter::Lawicel;
 use Test::MockModule;
 
-# We need to mock Device::SerialPort to avoid needing real hardware
-my $serial_mock = Test::MockModule->new('Device::SerialPort');
-my $termios_mock = Test::MockModule->new('Linux::Termios2');
-
 my $written_data;
 my $read_buffer = '';
-# Create a real, but in-memory, filehandle to be blessed for the mock.
-# This allows the built-in fileno() to work on our mock object.
-open my $mock_fh, '+>', \my $in_memory_buffer;
 
-# Mock Linux::Termios2 to do nothing, as we don't test low-level setup here.
-$termios_mock->mock('new' => sub { bless [], shift }); # v0.01 blesses an arrayref
-$termios_mock->mock('getattr' => sub { 1 }); # Mock the getattr() method
-$termios_mock->mock('set' => sub {1});
+# --- Mock Linux::Termios2 ---
+# The module now uses raw filehandles and POSIX calls. We mock the entire 'open'
+# method since its low-level details are tested by the hardware tests. For the
+# other methods, we mock the internal I/O wrappers.
+my $adapter_mock = Test::MockModule->new('CAN::Adapter::Lawicel');
 
-$serial_mock->mock(
-    'new'       => sub {
-        my $class = shift;
-        # The real object is a hash containing the file descriptor (FD).
-        # We mock this structure to allow the main code to access $port->{FD}.
-        my $mock_obj = { FD => fileno($mock_fh) };
-        return bless $mock_obj, $class;
-    },
-    'FILENO' => sub {
+# 1. Mock 'open' to just set the state and provide an in-memory filehandle.
+my $in_memory_buffer;
+$adapter_mock->mock('open', sub {
+    my $self = shift;
+    $self->{is_open} = 1;
+    open my $fh, '+>', \$in_memory_buffer;
+    $self->{handle} = $fh;
+    return 1;
+});
+
+# 2. Mock the internal I/O methods to use our buffers.
+$adapter_mock->mock(
+    'send_raw' => sub {
         my $self = shift;
-        # The real FILENO method returns the internal file descriptor.
-        return $self->{FD};
-    },
-    'read_char_time' => sub {1},
-    'read_const_time' => sub {1},
-    'write_settings' => sub {1},
-    'write'     => sub {
-        my ($self, $data) = @_;
+        my ($data) = @_;
         $written_data = $data;
         # If this is a settings command, simulate the adapter sending back an ACK
         if ($data =~ /^\xaa\x55\x12/) {
             $read_buffer .= "\r";
         }
-        # If this is a close command, simulate the adapter sending back an ACK
         elsif ($data eq "C\r") {
             $read_buffer .= "\r";
         }
-        # If this is a version command, simulate the version response
         elsif ($data eq "V\r") {
             $read_buffer = "V9876\r";
         }
-        return length($data);
+        return 1;
     },
-    'read' => sub {
-        my ($self, $count) = @_;
-        my $chunk = substr($read_buffer, 0, $count, '');
-        return (length($chunk), $chunk);
+    'fill_buffer' => sub {
+        my $self = shift;
+        return 0 unless length $read_buffer;
+        $self->{_in_buffer} .= $read_buffer;
+        my $len = length $read_buffer;
+        $read_buffer = '';
+        return $len;
     },
-    'purge_rx' => sub {1},
-    'close' => sub {1},
+    'purge_rx' => sub { $read_buffer = ''; 1; },
 );
 
 # Test 1: Can't open bus if adapter isn't open

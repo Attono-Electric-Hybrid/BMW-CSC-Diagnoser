@@ -18,6 +18,7 @@ WriteMakefile(
         'Test::More' => '0',
         'Test::MockModule' => '0.177',
         'Test::Exception' => '0',
+        'ExtUtils::CChecker' => '0',
     },
     PREREQ_PM => {
         'Device::SerialPort' => '1.04',

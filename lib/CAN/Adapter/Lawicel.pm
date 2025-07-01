@@ -6,7 +6,12 @@ use warnings;
 
 use Fcntl qw(:DEFAULT O_RDWR O_NOCTTY O_NONBLOCK);
 use Linux::Termios2;
-use POSIX qw(tcflush TCIFLUSH);
+# The Linux::Termios2 module does not export the necessary constants. We define
+# them here based on the standard values from <asm/termbits.h>. This is a
+# direct translation of the values used in the C reference implementation.
+# BOTHER=010000(octal), CS8=060(octal), CSTOPB=0100(octal), IGNPAR=004(octal)
+use constant { BOTHER => 4096, CS8 => 48, CSTOPB => 64, IGNPAR => 4 };
+use POSIX qw(tcflush TCIFLUSH TCSANOW);
 use Time::HiRes qw(time sleep);
 
 our $VERSION = '0.01';
@@ -109,20 +114,25 @@ sub open {
     $tio->getattr( fileno($fh) )
         or die "Could not get termios2 settings for device: $!";
 
-    # Clear standard baud bits and set the custom baud flag (BOTHER)
-    $tio->c_cflag &= ~Linux::Termios2::CBAUD();
-    $tio->c_cflag = Linux::Termios2::BOTHER() | Linux::Termios2::CS8() | Linux::Termios2::CSTOPB();
+    # The Linux::Termios2 object provides accessor methods similar to
+    # POSIX::Termios. The error "Not a HASH reference" confirms that it is
+    # not a blessed hash and must be manipulated via methods.
+    #
+    # The C code effectively does `tio.c_cflag = BOTHER | CS8 | CSTOPB;`,
+    # overwriting all other control flags. We replicate that here.
+    $tio->setcflag(BOTHER | CS8 | CSTOPB);
 
     # Set input, output, and local flags to match canusb.c
-    $tio->c_iflag = Linux::Termios2::IGNPAR();
-    $tio->c_oflag = 0;
-    $tio->c_lflag = 0;
+    $tio->setiflag(IGNPAR);
+    $tio->setoflag(0);
+    $tio->setlflag(0);
 
-    # Set the custom input and output speeds.
-    $tio->c_ispeed = $self->{baudrate};
-    $tio->c_ospeed = $self->{baudrate};
+    # Set the custom input and output speeds. The `set*speed` methods also
+    # ensure the BOTHER flag is correctly handled in c_cflag.
+    $tio->setispeed($self->{baudrate});
+    $tio->setospeed($self->{baudrate});
 
-    $tio->set() or die "Could not set termios2 settings for device: $!";
+    $tio->setattr(fileno($fh), TCSANOW) or die "Could not set termios2 settings for device: $!";
 
     # Purge any old data from the OS and adapter buffers and wait a moment.
     $self->{handle} = $fh; # Temporarily set handle for purge_rx
@@ -157,7 +167,7 @@ sub open_bus {
 
     # Purge any stale data from OS/adapter buffers right before we send our command
     # and expect a specific response. This is crucial on an active bus.
-    $self->{handle}->purge_rx();
+    $self->purge_rx();
     $self->{_in_buffer} = '';
 
     my $speed_code = $CAN_SPEED_MAP{$speed}
@@ -179,8 +189,7 @@ sub open_bus {
     my $checksum = _generate_checksum(@cmd_payload);
     my $frame = pack('C C C*', 0xaa, 0x55, @cmd_payload, $checksum);
 
-    my $written = $self->{handle}->write($frame);
-    die "Failed to write settings command to adapter: $!" unless $written == length($frame);
+    $self->send_raw($frame);
 
     # Wait for an ACK (\r) from the device to confirm the command was accepted.
     my $timeout = 1; # 1 second timeout
