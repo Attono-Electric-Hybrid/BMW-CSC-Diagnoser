@@ -4,8 +4,9 @@ use 5.006;
 use strict;
 use warnings;
 
-use Device::SerialPort;
+use Fcntl qw(:DEFAULT O_RDWR O_NOCTTY O_NONBLOCK);
 use Linux::Termios2;
+use POSIX qw(tcflush TCIFLUSH);
 use Time::HiRes qw(time sleep);
 
 our $VERSION = '0.01';
@@ -95,43 +96,39 @@ sub open {
     my ($self) = @_;
     return 1 if $self->{is_open};
 
-    # Use Device::SerialPort to get a file handle.
-    my $port = Device::SerialPort->new($self->{device})
-        || die "Can't open $self->{device}: $!";
+    # Open the device manually to get a raw filehandle, which gives us
+    # direct control for the termios2 ioctl operations. This avoids conflicts
+    # with Device::SerialPort's own initialization.
+    sysopen(my $fh, $self->{device}, O_RDWR | O_NOCTTY | O_NONBLOCK)
+        or die "Can't sysopen $self->{device}: $!";
 
     # Use Linux::Termios2 to apply the low-level settings, which is necessary
     # for the non-standard 2M baud rate. This is a direct translation of the
     # C code's termios2 setup.
-    # We use the FILENO method to get the raw file descriptor, which is then
-    # used by Linux::Termios2 to configure the port.
-    my $tio = Linux::Termios2->new( $port->FILENO )
+    my $tio = Linux::Termios2->new();
+    $tio->getattr( fileno($fh) )
         or die "Could not get termios2 settings for device: $!";
 
     # Clear standard baud bits and set the custom baud flag (BOTHER)
     $tio->c_cflag &= ~Linux::Termios2::CBAUD();
     $tio->c_cflag = Linux::Termios2::BOTHER() | Linux::Termios2::CS8() | Linux::Termios2::CSTOPB();
 
-    # Set input, output, and local flags
+    # Set input, output, and local flags to match canusb.c
     $tio->c_iflag = Linux::Termios2::IGNPAR();
     $tio->c_oflag = 0;
     $tio->c_lflag = 0;
 
-    # Set the custom input and output speeds
+    # Set the custom input and output speeds.
     $tio->c_ispeed = $self->{baudrate};
     $tio->c_ospeed = $self->{baudrate};
 
     $tio->set() or die "Could not set termios2 settings for device: $!";
 
-    # Set timeouts for non-blocking reads, mimicking O_NONBLOCK in the C code.
-    $port->read_const_time(1); # in ms
-    $port->read_char_time(0);  # in ms
-    $port->write_settings()            || die "Can't apply serial port settings: $!";
-
     # Purge any old data from the OS and adapter buffers and wait a moment.
-    $port->purge_rx();
+    $self->{handle} = $fh; # Temporarily set handle for purge_rx
+    $self->purge_rx();
     sleep(0.1);
 
-    $self->{handle}  = $port;
     $self->{is_open} = 1;
 
     return 1;
@@ -218,14 +215,7 @@ sub close_bus {
     my ($self) = @_;
     die "Adapter is not open. Call open() first." unless $self->{is_open};
 
-    # Purge buffers to ensure we're reading a fresh response
-    $self->{handle}->purge_rx();
-    $self->{_in_buffer} = '';
-
-    my $cmd = "C\r";
-    my $written = $self->{handle}->write($cmd);
-    die "Failed to write close command to adapter: $!" unless $written == length($cmd);
-
+    $self->send_raw("C\r");
     # Wait for an ACK (\r) from the device to confirm.
     my $timeout = 0.5; # Half a second is plenty
     my $end_time = time() + $timeout;
@@ -287,10 +277,27 @@ sub send {
     push @frame_bytes, @data_bytes;
     push @frame_bytes, 0x55;
 
-    my $frame_packed = pack('C*', @frame_bytes);
-    my $written = $self->{handle}->write($frame_packed);
-    
-    return $written == length($frame_packed);
+    return $self->send_raw(pack('C*', @frame_bytes));
+}
+
+=head2 send_raw
+
+Sends a raw binary string to the serial device.
+
+=cut
+
+sub send_raw {
+    my ($self, $data) = @_;
+    my $written = syswrite($self->{handle}, $data);
+    unless (defined $written && $written == length($data)) {
+        die "Failed to write to adapter: $!";
+    }
+    return 1;
+}
+
+sub purge_rx {
+    my ($self) = @_;
+    return POSIX::tcflush(fileno($self->{handle}), POSIX::TCIFLUSH());
 }
 
 =head2 fill_buffer
@@ -304,11 +311,17 @@ Returns the number of bytes read, 0 on timeout, or undef on error.
 
 sub fill_buffer {
     my ($self) = @_;
-    my ($count, $data) = $self->{handle}->read(256);
+    my $buf;
+    # Use non-blocking sysread on the raw filehandle
+    my $count = sysread($self->{handle}, $buf, 256);
+
     if (defined $count && $count > 0) {
-        $self->{_in_buffer} .= $data;
+        $self->{_in_buffer} .= $buf;
+        return $count;
     }
-    return $count;
+    # EAGAIN means no data was available, which is normal for non-blocking reads.
+    return 0 if (!defined($count) && $!{EAGAIN});
+    return $count; # Could be 0 for EOF or undef for other errors
 }
 
 =head2 read_frame
@@ -388,13 +401,8 @@ sub get_version {
     my ($self) = @_;
     die "Adapter is not open. Call open() first." unless $self->{is_open};
 
-    # Purge buffers to ensure we're reading a fresh response
-    $self->{handle}->purge_rx();
-    $self->{_in_buffer} = '';
-
-    my $cmd = "V\r";
-    my $written = $self->{handle}->write($cmd);
-    die "Failed to write version command to adapter: $!" unless $written == length($cmd);
+    $self->purge_rx();
+    $self->send_raw("V\r");
 
     my $timeout = 1; # 1 second timeout
     my $end_time = time() + $timeout;
@@ -435,7 +443,7 @@ Closes the connection to the serial device.
 sub close {
     my ($self) = @_;
     if ($self->{is_open}) {
-        $self->{handle}->close();
+        close($self->{handle});
         $self->{handle} = undef;
         $self->{is_open} = 0;
     }

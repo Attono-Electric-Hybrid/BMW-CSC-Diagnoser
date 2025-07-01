@@ -20,7 +20,8 @@ my $read_buffer = '';
 open my $mock_fh, '+>', \my $in_memory_buffer;
 
 # Mock Linux::Termios2 to do nothing, as we don't test low-level setup here.
-$termios_mock->mock('new' => sub { bless {}, shift });
+$termios_mock->mock('new' => sub { bless [], shift }); # v0.01 blesses an arrayref
+$termios_mock->mock('getattr' => sub { 1 }); # Mock the getattr() method
 $termios_mock->mock('set' => sub {1});
 
 $serial_mock->mock(
