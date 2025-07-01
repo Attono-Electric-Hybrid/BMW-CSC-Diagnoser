@@ -9,38 +9,44 @@ use lib "$Bin/../lib";
 use CAN::Adapter::Lawicel;
 use Test::MockModule;
 
-# We need to mock Device::SerialPort to avoid needing real hardware
-my $serial_mock = Test::MockModule->new('Device::SerialPort');
-
 my $written_data;
 my $read_buffer = '';
+
 # Create a real, but in-memory, filehandle to be blessed for the mock.
 # This allows the built-in fileno() to work on our mock object.
-open my $mock_fh, '+>', \my $in_memory_buffer;
-$serial_mock->mock(
-    'new'       => sub { bless $mock_fh, shift },
-    'baudrate'  => sub {1},
-    'databits'  => sub {1},
-    'parity'    => sub {1},
-    'stopbits'  => sub {1},
-    'read_char_time' => sub {1},
-    'read_const_time' => sub {1},
-    'stty_icrnl' => sub {1},
-    'stty_opost' => sub {1},
-    'handshake' => sub {1},
-    'write_settings' => sub {1},
-    'write'     => sub {
-        my ($self, $data) = @_;
+# --- Mock Linux::Termios2 ---
+# The module now uses raw filehandles and POSIX calls. We mock the entire 'open'
+# method since its low-level details are tested by the hardware tests. For the
+# other methods, we mock the internal I/O wrappers.
+my $adapter_mock = Test::MockModule->new('CAN::Adapter::Lawicel');
+
+# 1. Mock 'open' to just set the state and provide an in-memory filehandle.
+my $in_memory_buffer;
+$adapter_mock->mock('open', sub {
+    my $self = shift;
+    $self->{is_open} = 1;
+    open my $fh, '+>', \$in_memory_buffer;
+    $self->{handle} = $fh;
+    return 1;
+});
+
+# 2. Mock the internal I/O methods to use our buffers.
+$adapter_mock->mock(
+    'send_raw' => sub {
+        my $self = shift;
+        my ($data) = @_;
         $written_data = $data;
-        return length($data);
+        return 1;
     },
-    'read' => sub {
-        my ($self, $count) = @_;
-        my $chunk = substr($read_buffer, 0, $count, '');
-        return (length($chunk), $chunk);
+    'fill_buffer' => sub {
+        my $self = shift;
+        return 0 unless length $read_buffer;
+        $self->{_in_buffer} .= $read_buffer;
+        my $len = length $read_buffer;
+        $read_buffer = '';
+        return $len;
     },
-    'purge_rx' => sub {1},
-    'close' => sub {1},
+    'purge_rx' => sub { $read_buffer = ''; 1; },
 );
 
 # --- SEND TESTS ---
@@ -49,7 +55,7 @@ subtest 'send method' => sub {
     $adapter->open();
 
     $adapter->send(id => '1E0', data => '5ed00000000070d3');
-    
+
     my $expected_frame = pack('C*', 0xaa, 0xC8, 0xE0, 0x01, 0x5e, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x70, 0xd3, 0x55);
     is($written_data, $expected_frame, 'Correct frame sent for standard ID');
 };
@@ -63,13 +69,13 @@ subtest 'read_frame method' => sub {
     $read_buffer = pack('C*', 0xaa, 0xC8, 0x20, 0x01, 0xe4, 0xd0, 0x0e, 0x18, 0x0e, 0x18, 0x0e, 0x18, 0x55);
     my $bytes_read = $adapter->fill_buffer();
     is($bytes_read, 13, 'fill_buffer reads all data');
-    
+
     my $frame = $adapter->read_frame();
     isa_ok($frame, 'HASH', 'read_frame returns a hashref');
     is($frame->{id}, '120', 'Correct ID parsed');
     is($frame->{dlc}, 8, 'Correct DLC parsed');
     is_deeply($frame->{data}, [0xe4, 0xd0, 0x0e, 0x18, 0x0e, 0x18, 0x0e, 0x18], 'Correct data parsed');
-    
+
     # Test 2: Garbage at the beginning followed by a good frame
     $read_buffer = pack('C*', 0x11, 0xaa, 0xC1, 0x83, 0x01, 0x3a, 0x55);
     $adapter->fill_buffer();
@@ -80,7 +86,7 @@ subtest 'read_frame method' => sub {
     is($good_frame->{id}, '183', 'Correct ID parsed after garbage');
     is($good_frame->{dlc}, 1, 'Correct DLC parsed');
     is_deeply($good_frame->{data}, [0x3a], 'Correct data parsed');
-    
+
     # Test 3: Corrupted frame (bad end byte) followed by good frame
     $read_buffer = pack('C*', 0xaa, 0xC1, 0x83, 0x01, 0x3a, 0x00, 0xaa, 0xC1, 0x84, 0x01, 0x3b, 0x55);
     $adapter->fill_buffer();

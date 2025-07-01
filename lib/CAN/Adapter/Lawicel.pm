@@ -120,24 +120,22 @@ sub open {
     #
     # The C code effectively does `tio.c_cflag = BOTHER | CS8 | CSTOPB;`,
     # overwriting all other control flags. We replicate that here.
-    $tio->setcflag(BOTHER | CS8 | CSTOPB);
-
     # Set input, output, and local flags to match canusb.c
     $tio->setiflag(IGNPAR);
     $tio->setoflag(0);
     $tio->setlflag(0);
 
-    # Set the custom input and output speeds. The `set*speed` methods also
-    # ensure the BOTHER flag is correctly handled in c_cflag.
+    # Set the custom input and output speeds. The `set*speed` methods have
+    # side-effects on c_cflag (ensuring BOTHER is set).
     $tio->setispeed($self->{baudrate});
     $tio->setospeed($self->{baudrate});
+    # We set c_cflag last to ensure it has the exact final value we need,
+    # overwriting any side-effects from the speed setting.
+    $tio->setcflag(BOTHER | CS8 | CSTOPB);
 
     $tio->setattr(fileno($fh), TCSANOW) or die "Could not set termios2 settings for device: $!";
 
-    # Purge any old data from the OS and adapter buffers and wait a moment.
-    $self->{handle} = $fh; # Temporarily set handle for purge_rx
-    $self->purge_rx();
-    sleep(0.1);
+    $self->{handle} = $fh;
 
     $self->{is_open} = 1;
 
@@ -167,7 +165,6 @@ sub open_bus {
 
     # Purge any stale data from OS/adapter buffers right before we send our command
     # and expect a specific response. This is crucial on an active bus.
-    $self->purge_rx();
     $self->{_in_buffer} = '';
 
     my $speed_code = $CAN_SPEED_MAP{$speed}
@@ -181,7 +178,6 @@ sub open_bus {
         0, 0, 0, 0, # Filter ID (not used)
         0, 0, 0, 0, # Mask ID (not used)
         0x00,       # Mode: Normal (0x01 for listen-only)
-        0x00,       # Unused byte, to match C implementation's 18-byte payload
         0x01,       # Constant
         0, 0, 0, 0  # Unused
     );
@@ -191,24 +187,13 @@ sub open_bus {
 
     $self->send_raw($frame);
 
-    # Wait for an ACK (\r) from the device to confirm the command was accepted.
-    my $timeout = 1; # 1 second timeout
-    my $end_time = time() + $timeout;
+    # The reference C implementation does not wait for an ACK after sending the
+    # settings command. It assumes success if the write() call completes and
+    # immediately proceeds to read data frames. We will mimic that behavior.
+    # A brief pause can be helpful to allow the adapter to process the command.
+    sleep(0.05);
 
-    while (time() < $end_time) {
-        # This is non-blocking, so it's safe in a loop
-        $self->fill_buffer(); 
-        # Process all frames in the buffer, looking for the ACK. This is much
-        # more efficient than the previous "check-one-and-sleep" approach.
-        while (my $response = $self->read_frame()) {
-            return 1 if $response->{type} eq 'ack';
-            # Other frames (data, error) are ignored during this handshake.
-        }
-        sleep(0.05); # 50ms sleep to not busy-wait
-    }
-
-    # If we get here, we timed out.
-    die "Did not receive ACK from adapter after sending settings within ${timeout}s. Check connection/speed.";
+    return 1;
 }
 
 =head2 close_bus
@@ -279,9 +264,9 @@ sub send {
     my $info_byte = 0xC0 | $dlc; # 0b11000000 | DLC
     
     my @frame_bytes;
-    push @frame_bytes, 0xaa;
+    push @frame_bytes, 0xaa; # Start Byte
     push @frame_bytes, $info_byte;
-    push @frame_bytes, $id & 0xFF; # LSB
+    push @frame_bytes, $id & 0xFF; # LSB ID
     push @frame_bytes, ($id >> 8) & 0xFF; # MSB
     push @frame_bytes, @data_bytes;
     push @frame_bytes, 0x55;
@@ -395,41 +380,6 @@ sub read_frame {
     # If we get here, the first character is not a known start of a frame. It's garbage.
     my $garbage = substr($self->{_in_buffer}, 0, 1, '');
     return { type => 'error', reason => 'garbage', details => 'Unexpected data from adapter', raw => unpack('H*', $garbage) };
-}
-
-=head2 get_version
-
-Requests the firmware version from the adapter. This is a simple way to test
-basic communication.
-
-Returns the version string on success, or dies on timeout.
-
-=cut
-
-sub get_version {
-    my ($self) = @_;
-    die "Adapter is not open. Call open() first." unless $self->{is_open};
-
-    $self->purge_rx();
-    $self->send_raw("V\r");
-
-    my $timeout = 1; # 1 second timeout
-    my $end_time = time() + $timeout;
-    my $version_string;
-
-    while (time() < $end_time) {
-        $self->fill_buffer();
-        # The response is not a standard frame, so we check the raw buffer
-        if ($self->{_in_buffer} =~ s/^(V[^\r]*\r)//) {
-            $version_string = $1;
-            last;
-        }
-        sleep(0.05);
-    }
-
-    die "Did not receive a version response from adapter within ${timeout}s" unless $version_string;
-    
-    return $version_string;
 }
 
 =head2 get_handle
